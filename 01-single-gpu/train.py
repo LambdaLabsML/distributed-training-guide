@@ -5,6 +5,7 @@ import multiprocessing
 import random
 import os
 import time
+from pathlib import Path
 
 import torch
 from torch.utils.data import DataLoader
@@ -24,12 +25,6 @@ def main():
     parser = _get_parser()
     args = parser.parse_args()
 
-    experiment_dir = os.path.join(args.save_dir, args.experiment_name)
-    optimizer_path = os.path.join(experiment_dir, "optimizer.pt")
-    model_path = os.path.join(experiment_dir, "model.pt")
-    state_path = os.path.join(experiment_dir, "state.json")
-    lr_scheduler_path = os.path.join(experiment_dir, "lr_scheduler.pt")
-
     torch.manual_seed(args.seed)
     torch.cuda.manual_seed_all(args.seed)
     numpy.random.seed(args.seed)
@@ -39,6 +34,9 @@ def main():
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     dtype = torch.bfloat16
+
+    def _load_to_device(p):
+        return torch.load(p, map_location=device, weights_only=True)
 
     config = AutoConfig.from_pretrained(args.model_name, trust_remote_code=True)
     model = AutoModelForCausalLM.from_config(config, trust_remote_code=True).to(
@@ -65,6 +63,8 @@ def main():
         optimizer, T_max=len(train_loader), eta_min=args.lr * 1e-2
     )
 
+    exp_dir: Path = Path(args.save_dir) / args.experiment_name
+
     # attempt resume
     state = {
         "epoch": 0,
@@ -73,23 +73,17 @@ def main():
         "running_loss": 0,
     }
     resumed = False
-    if os.path.exists(experiment_dir):
-        model.load_state_dict(
-            torch.load(model_path, weights_only=True, map_location=device)
-        )
-        optimizer.load_state_dict(
-            torch.load(optimizer_path, weights_only=True, map_location=device)
-        )
-        lr_scheduler.load_state_dict(
-            torch.load(lr_scheduler_path, weights_only=True, map_location=device)
-        )
-        with open(state_path) as fp:
+    if exp_dir.exists():
+        model.load_state_dict(_load_to_device(exp_dir / "model.pt"))
+        optimizer.load_state_dict(_load_to_device(exp_dir / "optimizer.pt"))
+        lr_scheduler.load_state_dict(_load_to_device(exp_dir / "lr_scheduler.pt"))
+        with open(os.path.join(exp_dir, "state.json")) as fp:
             state = json.load(fp)
-        print(f"Resumed from {experiment_dir} | {state}")
+        print(f"Resumed from {exp_dir} | {state}")
         resumed = True
 
     wandb.init(
-        dir=experiment_dir,
+        dir=exp_dir,
         name=args.experiment_name,
         id=args.experiment_name,
         resume="must" if resumed else None,
@@ -146,11 +140,11 @@ def main():
                     t.reset()
 
             if state["global_step"] % args.ckpt_freq == 0:
-                os.makedirs(experiment_dir, exist_ok=True)
-                torch.save(optimizer.state_dict(), optimizer_path)
-                torch.save(model.state_dict(), model_path)
-                torch.save(lr_scheduler.state_dict(), lr_scheduler_path)
-                with open(state_path, "w") as fp:
+                exp_dir.mkdir(parents=True, exist_ok=True)
+                torch.save(optimizer.state_dict(), exp_dir / "optimizer.pt")
+                torch.save(model.state_dict(), exp_dir / "model.pt")
+                torch.save(lr_scheduler.state_dict(), exp_dir / "lr_scheduler.pt")
+                with open(exp_dir / "state.json", "w") as fp:
                     json.dump(state, fp)
 
         state["epoch_step"] = 0
