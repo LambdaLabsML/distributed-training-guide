@@ -65,13 +65,16 @@ def main():
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr)
     lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-        optimizer, T_max=len(train_loader), eta_min=args.lr
+        optimizer, T_max=len(train_loader), eta_min=args.lr * 1e-2
     )
 
     # attempt resume
-    start_epoch = 0
-    global_step = 0
-    epoch_step = 0
+    state = {
+        "epoch": 0,
+        "global_step": 0,
+        "epoch_step": 0,
+        "running_loss": 0,
+    }
     resumed = False
     if os.path.exists(experiment_dir):
         model.load_state_dict(torch.load(model_path, weights_only=True))
@@ -79,13 +82,7 @@ def main():
         lr_scheduler.load_state_dict(torch.load(lr_scheduler_path, weights_only=True))
         with open(state_path) as fp:
             state = json.load(fp)
-        start_epoch = state["epoch"]
-        global_step = state["global_step"]
-        epoch_step = state["epoch_step"]
-
-        logger.info(
-            f"Resumed from {experiment_dir} | epoch={start_epoch} global_step={global_step} epoch_step={epoch_step}"
-        )
+        logger.info(f"Resumed from {experiment_dir} | {state}")
         resumed = True
 
     wandb.init(
@@ -99,12 +96,11 @@ def main():
 
     timers = {k: LocalTimer(device) for k in ["data", "forward", "backward", "step"]}
 
-    for i_epoch in range(start_epoch, args.num_epochs):
-        running_loss = 0
+    for state["epoch"] in range(state["epoch"], args.num_epochs):
         progress_bar = tqdm.tqdm(range(len(train_loader)))
-        progress_bar.update(epoch_step)
+        progress_bar.update(state["epoch_step"])
         for i_step, batch in enumerate(train_loader):
-            if i_step < epoch_step:
+            if i_step < state["epoch_step"]:
                 # NOTE: for resuming
                 continue
 
@@ -122,42 +118,37 @@ def main():
                 optimizer.step()
                 lr_scheduler.step()
 
-            global_step += 1
-            epoch_step += 1
+            state["global_step"] += 1
+            state["epoch_step"] += 1
             progress_bar.update(1)
-            running_loss += outputs.loss.item()
+            state["running_loss"] += outputs.loss.item()
 
-            if global_step % args.log_freq == 0:
+            if state["global_step"] % args.log_freq == 0:
                 wandb.log(
                     {
-                        "lr": optimizer.param_groups[0]["lr"],
-                        "running_loss": running_loss / args.log_freq,
-                        "epoch": i_epoch,
+                        "lr": lr_scheduler.get_last_lr()[0],
+                        "running_loss": state["running_loss"] / args.log_freq,
+                        "epoch": state["epoch"],
                         **{
                             f"time/{k}": timer.avg_elapsed_ms()
                             for k, timer in timers.items()
                         },
                     },
-                    step=global_step,
+                    step=state["global_step"],
                 )
-                running_loss = 0
+                state["running_loss"] = 0
 
-            if global_step % args.ckpt_freq == 0:
+            if state["global_step"] % args.ckpt_freq == 0:
                 os.makedirs(experiment_dir, exist_ok=True)
                 torch.save(optimizer.state_dict(), optimizer_path)
                 torch.save(model.state_dict(), model_path)
                 torch.save(lr_scheduler.state_dict(), lr_scheduler_path)
 
-                state = {
-                    "epoch": i_epoch,
-                    "global_step": global_step,
-                    "epoch_step": epoch_step,
-                }
                 logger.info(f"{state}")
                 with open(state_path, "w") as fp:
                     json.dump(state, fp)
 
-        epoch_step = 0
+        state["epoch_step"] = 0
 
 
 def _load_and_preprocess_data(args, config):
