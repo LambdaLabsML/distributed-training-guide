@@ -49,12 +49,11 @@ def main():
     dtype = torch.bfloat16
 
     config = AutoConfig.from_pretrained(args.model_name, trust_remote_code=True)
-    tokenizer = AutoTokenizer.from_pretrained(args.model_name, trust_remote_code=True)
     model = AutoModelForCausalLM.from_config(config, trust_remote_code=True).to(
         dtype=dtype, device=device
     )
 
-    train_data = _load_and_preprocess_data(args, tokenizer, config)
+    train_data = _load_and_preprocess_data(args, config)
 
     train_loader = DataLoader(
         train_data,
@@ -66,17 +65,18 @@ def main():
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr)
     lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-        optimizer, T_max=len(train_loader) * args.num_epochs, eta_min=args.lr
+        optimizer, T_max=len(train_loader), eta_min=args.lr
     )
 
     # attempt resume
     start_epoch = 0
     global_step = 0
     epoch_step = 0
+    resumed = False
     if os.path.exists(experiment_dir):
-        model.load_state_dict(torch.load(model_path))
-        optimizer.load_state_dict(torch.load(optimizer_path))
-        lr_scheduler.load_state_dict(torch.load(lr_scheduler_path))
+        model.load_state_dict(torch.load(model_path, weights_only=True))
+        optimizer.load_state_dict(torch.load(optimizer_path, weights_only=True))
+        lr_scheduler.load_state_dict(torch.load(lr_scheduler_path, weights_only=True))
         with open(state_path) as fp:
             state = json.load(fp)
         start_epoch = state["epoch"]
@@ -86,27 +86,30 @@ def main():
         logger.info(
             f"Resumed from {experiment_dir} | epoch={start_epoch} global_step={global_step} epoch_step={epoch_step}"
         )
+        resumed = True
 
     wandb.init(
         dir=experiment_dir,
         name=args.experiment_name,
         id=args.experiment_name,
-        resume="allow",
+        resume="must" if resumed else None,
         save_code=True,
+        config=vars(args),
     )
 
-    progress_bar = tqdm.tqdm(range(len(train_loader)), leave=True)
-
-    timers = {k: LocalTimer(device) for k in ["forward", "backward", "step"]}
+    timers = {k: LocalTimer(device) for k in ["data", "forward", "backward", "step"]}
 
     for i_epoch in range(start_epoch, args.num_epochs):
         running_loss = 0
-        progress_bar.reset()
+        progress_bar = tqdm.tqdm(range(len(train_loader)))
         progress_bar.update(epoch_step)
         for i_step, batch in enumerate(train_loader):
             if i_step < epoch_step:
                 # NOTE: for resuming
                 continue
+
+            with timers["data"], torch.no_grad():
+                batch = {k: v.to(device=device) for k, v in batch.items()}
 
             with timers["forward"]:
                 outputs = model(**batch)
@@ -140,6 +143,7 @@ def main():
                 running_loss = 0
 
             if global_step % args.ckpt_freq == 0:
+                os.makedirs(experiment_dir, exist_ok=True)
                 torch.save(optimizer.state_dict(), optimizer_path)
                 torch.save(model.state_dict(), model_path)
                 torch.save(lr_scheduler.state_dict(), lr_scheduler_path)
@@ -156,7 +160,9 @@ def main():
         epoch_step = 0
 
 
-def _load_and_preprocess_data(args, tokenizer, config):
+def _load_and_preprocess_data(args, config):
+    tokenizer = AutoTokenizer.from_pretrained(args.model_name, trust_remote_code=True)
+
     data = datasets.load_dataset(args.dataset_name, trust_remote_code=True)
 
     column_names = data["train"].column_names
@@ -237,11 +243,14 @@ def _get_parser() -> argparse.ArgumentParser:
     parser.add_argument("--seed", default=0, type=int)
     parser.add_argument("--num-epochs", default=100, type=int)
     parser.add_argument("--lr", default=3e-5, type=float)
-    parser.add_argument("--batch-size", default=32, type=int)
+    parser.add_argument("--batch-size", default=1, type=int)
     parser.add_argument("--log-freq", default=100, type=int)
     parser.add_argument("--ckpt-freq", default=500, type=int)
     return parser
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    finally:
+        wandb.finish()
