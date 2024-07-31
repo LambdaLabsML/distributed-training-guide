@@ -13,16 +13,11 @@ import wandb
 import tqdm
 import datasets
 from transformers import (
-    CONFIG_MAPPING,
-    MODEL_MAPPING,
     AutoConfig,
     AutoModelForCausalLM,
     AutoTokenizer,
     default_data_collator,
 )
-
-MODEL_CONFIG_CLASSES = list(MODEL_MAPPING.keys())
-MODEL_TYPES = tuple(conf.model_type for conf in MODEL_CONFIG_CLASSES)
 
 
 def main():
@@ -98,7 +93,8 @@ def main():
 
     for state["epoch"] in range(state["epoch"], args.num_epochs):
         progress_bar = tqdm.tqdm(range(len(train_loader)))
-        progress_bar.update(state["epoch_step"])
+        if state["epoch_step"] > 0:
+            progress_bar.update(state["epoch_step"])
         for i_step, batch in enumerate(train_loader):
             if i_step < state["epoch_step"]:
                 # NOTE: for resuming
@@ -120,8 +116,8 @@ def main():
 
             state["global_step"] += 1
             state["epoch_step"] += 1
-            progress_bar.update(1)
             state["running_loss"] += outputs.loss.item()
+            progress_bar.update(1)
 
             if state["global_step"] % args.log_freq == 0:
                 wandb.log(
@@ -139,12 +135,12 @@ def main():
                 state["running_loss"] = 0
 
             if state["global_step"] % args.ckpt_freq == 0:
+                logger.info(f"{state}")
+
                 os.makedirs(experiment_dir, exist_ok=True)
                 torch.save(optimizer.state_dict(), optimizer_path)
                 torch.save(model.state_dict(), model_path)
                 torch.save(lr_scheduler.state_dict(), lr_scheduler_path)
-
-                logger.info(f"{state}")
                 with open(state_path, "w") as fp:
                     json.dump(state, fp)
 
@@ -211,10 +207,11 @@ class LocalTimer:
         return self
 
     def __exit__(self, type, value, traceback):
-        if self.device.type == "cuda":
-            torch.cuda.synchronize(device=self.device)
-        end_time = time.time()
-        self.measurements.append(end_time - self.start_time)
+        if traceback is None:
+            if self.device.type == "cuda":
+                torch.cuda.synchronize(device=self.device)
+            end_time = time.time()
+            self.measurements.append(end_time - self.start_time)
         self.start_time = None
 
     def avg_elapsed_ms(self):
