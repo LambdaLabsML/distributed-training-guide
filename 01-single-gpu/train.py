@@ -1,7 +1,6 @@
 import argparse
 from itertools import chain
 import json
-import logging
 import multiprocessing
 import random
 import os
@@ -36,9 +35,7 @@ def main():
     numpy.random.seed(args.seed)
     random.seed(args.seed)
 
-    logging.basicConfig(level=logging.INFO)
-    logger = logging.getLogger(__name__)
-    logger.info(f"{args}")
+    print(args)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     dtype = torch.bfloat16
@@ -88,7 +85,7 @@ def main():
         )
         with open(state_path) as fp:
             state = json.load(fp)
-        logger.info(f"Resumed from {experiment_dir} | {state}")
+        print(f"Resumed from {experiment_dir} | {state}")
         resumed = True
 
     wandb.init(
