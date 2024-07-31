@@ -83,6 +83,7 @@ def main():
         resumed = True
 
     wandb.init(
+        project="distributed-training-tutorials",
         dir=exp_dir,
         name=args.experiment_name,
         id=args.experiment_name,

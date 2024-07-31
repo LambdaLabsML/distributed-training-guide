@@ -99,11 +99,12 @@ def main():
         resumed = True
 
     wandb.init(
+        project="distributed-training-tutorials",
         dir=exp_dir,
         group=args.experiment_name,
         job_type="train",
-        name=f"{args.experiment_name}_{rank}",
-        id=f"{args.experiment_name}_{rank}",
+        name=f"{args.experiment_name}-{rank}",
+        id=f"{args.experiment_name}-{rank}",
         resume="must" if resumed else None,
         save_code=True,
         config=vars(args),
