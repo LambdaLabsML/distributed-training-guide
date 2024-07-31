@@ -125,23 +125,17 @@ def main():
                         "lr": lr_scheduler.get_last_lr()[0],
                         "running_loss": state["running_loss"] / args.log_freq,
                         "epoch": state["epoch"],
+                        "time/total": sum(t.avg_elapsed_ms() for t in timers.values()),
                         **{
                             f"time/{k}": timer.avg_elapsed_ms()
                             for k, timer in timers.items()
                         },
-                        "time/batch": sum(
-                            timer.avg_elapsed_ms() for timer in timers.values()
-                        ),
-                        "time/item": sum(
-                            timer.avg_elapsed_ms() for timer in timers.values()
-                        )
-                        / args.batch_size,
                     },
                     step=state["global_step"],
                 )
                 state["running_loss"] = 0
-                for _, timer in timers.items():
-                    timer.reset()
+                for t in timers.values():
+                    t.reset()
 
             if state["global_step"] % args.ckpt_freq == 0:
                 logger.info(f"{state}")
