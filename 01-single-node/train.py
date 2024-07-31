@@ -129,10 +129,19 @@ def main():
                             f"time/{k}": timer.avg_elapsed_ms()
                             for k, timer in timers.items()
                         },
+                        "time/batch": sum(
+                            timer.avg_elapsed_ms() for timer in timers.values()
+                        ),
+                        "time/item": sum(
+                            timer.avg_elapsed_ms() for timer in timers.values()
+                        )
+                        / args.batch_size,
                     },
                     step=state["global_step"],
                 )
                 state["running_loss"] = 0
+                for _, timer in timers.items():
+                    timer.reset()
 
             if state["global_step"] % args.ckpt_freq == 0:
                 logger.info(f"{state}")
