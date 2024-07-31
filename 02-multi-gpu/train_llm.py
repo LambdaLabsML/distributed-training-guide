@@ -28,6 +28,9 @@ def main():
     parser = _get_parser()
     args = parser.parse_args()
 
+    torch.set_num_threads(1)
+    torch.set_num_interop_threads(1)
+
     torch.manual_seed(args.seed)
     torch.cuda.manual_seed_all(args.seed)
     numpy.random.seed(args.seed)
@@ -51,13 +54,13 @@ def main():
     model = AutoModelForCausalLM.from_config(config, trust_remote_code=True).to(
         dtype=dtype, device=device
     )
-    model = DDP(model, device_ids=[rank])
-
     tokenizer = AutoTokenizer.from_pretrained(args.model_name, trust_remote_code=True)
 
     embedding_size = model.get_input_embeddings().weight.shape[0]
     if len(tokenizer) > embedding_size:
         model.resize_token_embeddings(len(tokenizer))
+
+    model = DDP(model, device_ids=[rank])
 
     # NOTE: since this can download data, make sure to do the main process first
     if rank == 0:
@@ -98,16 +101,21 @@ def main():
         print(f"Resumed from {exp_dir} | {state}")
         resumed = True
 
+    dist.barrier()
+    if rank == 0:
+        exp_dir.mkdir(parents=True, exist_ok=True)
+    dist.barrier()
+
     wandb.init(
         project="distributed-training-tutorials",
-        dir=exp_dir,
+        dir=exp_dir / f"gpu-{rank}",
         group=args.experiment_name,
         job_type="train",
-        name=f"{args.experiment_name}-{rank}",
-        id=f"{args.experiment_name}-{rank}",
+        name=f"gpu-{rank}",
         resume="must" if resumed else None,
         save_code=True,
         config=vars(args),
+        settings=wandb.Settings(_disable_stats=rank > 0),
     )
 
     timers = {k: LocalTimer(device) for k in ["data", "forward", "backward", "update"]}
@@ -146,6 +154,8 @@ def main():
                         "lr": lr_scheduler.get_last_lr()[0],
                         "running_loss": state["running_loss"] / args.log_freq,
                         "epoch": state["epoch"],
+                        "epoch_progress": state["epoch_step"] / len(train_loader),
+                        "num_batches_remaining": len(train_loader) - i_step,
                         "time/total": sum(t.avg_elapsed_ms() for t in timers.values()),
                         **{
                             f"time/{k}": timer.avg_elapsed_ms()
@@ -160,7 +170,6 @@ def main():
 
             if state["global_step"] % args.ckpt_freq == 0:
                 if rank == 0:
-                    exp_dir.mkdir(parents=True, exist_ok=True)
                     torch.save(optimizer.state_dict(), exp_dir / "optimizer.pt")
                     torch.save(model.state_dict(), exp_dir / "model.pt")
                     torch.save(lr_scheduler.state_dict(), exp_dir / "lr_scheduler.pt")
@@ -184,7 +193,7 @@ def _load_and_preprocess_data(args, tokenizer, config):
         tokenize_function,
         batched=True,
         remove_columns=column_names,
-        num_proc=multiprocessing.cpu_count() // torch.cuda.device_count(),
+        num_proc=multiprocessing.cpu_count(),
         load_from_cache_file=True,
         desc="Running tokenizer on dataset",
     )
@@ -212,7 +221,7 @@ def _load_and_preprocess_data(args, tokenizer, config):
     lm_datasets = tokenized_datasets.map(
         group_texts,
         batched=True,
-        num_proc=multiprocessing.cpu_count() // torch.cuda.device_count(),
+        num_proc=multiprocessing.cpu_count(),
         load_from_cache_file=True,
         desc=f"Grouping texts in chunks of {block_size}",
     )

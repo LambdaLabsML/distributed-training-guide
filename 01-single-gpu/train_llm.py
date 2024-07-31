@@ -82,6 +82,8 @@ def main():
         print(f"Resumed from {exp_dir} | {state}")
         resumed = True
 
+    exp_dir.mkdir(parents=True, exist_ok=True)
+
     wandb.init(
         project="distributed-training-tutorials",
         dir=exp_dir,
@@ -128,6 +130,8 @@ def main():
                         "lr": lr_scheduler.get_last_lr()[0],
                         "running_loss": state["running_loss"] / args.log_freq,
                         "epoch": state["epoch"],
+                        "epoch_progress": state["epoch_step"] / len(train_loader),
+                        "num_batches_remaining": len(train_loader) - i_step,
                         "time/total": sum(t.avg_elapsed_ms() for t in timers.values()),
                         **{
                             f"time/{k}": timer.avg_elapsed_ms()
@@ -141,7 +145,6 @@ def main():
                     t.reset()
 
             if state["global_step"] % args.ckpt_freq == 0:
-                exp_dir.mkdir(parents=True, exist_ok=True)
                 torch.save(optimizer.state_dict(), exp_dir / "optimizer.pt")
                 torch.save(model.state_dict(), exp_dir / "model.pt")
                 torch.save(lr_scheduler.state_dict(), exp_dir / "lr_scheduler.pt")

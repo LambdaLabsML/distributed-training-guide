@@ -5,11 +5,11 @@ This is the "standard" single gpu training script. It doesn't do anything with d
 ## Command
 
 ```bash
-python train.py \
+python train_llm.py \
     --experiment-name gpt2-openwebtext-single-gpu \
     --dataset-name Skylion007/openwebtext \
     --model-name openai-community/gpt2 \
-    --batch-size 16
+    --batch-size 64
 ```
 
 ## Features
