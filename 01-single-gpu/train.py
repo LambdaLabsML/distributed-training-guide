@@ -2,6 +2,7 @@ import argparse
 from itertools import chain
 import json
 import logging
+import multiprocessing
 import random
 import os
 import time
@@ -46,8 +47,13 @@ def main():
     model = AutoModelForCausalLM.from_config(config, trust_remote_code=True).to(
         dtype=dtype, device=device
     )
+    tokenizer = AutoTokenizer.from_pretrained(args.model_name, trust_remote_code=True)
 
-    train_data = _load_and_preprocess_data(args, config)
+    embedding_size = model.get_input_embeddings().weight.shape[0]
+    if len(tokenizer) > embedding_size:
+        model.resize_token_embeddings(len(tokenizer))
+
+    train_data = _load_and_preprocess_data(args, tokenizer, config)
 
     train_loader = DataLoader(
         train_data,
@@ -94,7 +100,7 @@ def main():
         config=vars(args),
     )
 
-    timers = {k: LocalTimer(device) for k in ["data", "forward", "backward", "step"]}
+    timers = {k: LocalTimer(device) for k in ["data", "forward", "backward", "update"]}
 
     for state["epoch"] in range(state["epoch"], args.num_epochs):
         progress_bar = tqdm.tqdm(range(len(train_loader)))
@@ -115,7 +121,7 @@ def main():
                 optimizer.zero_grad()
                 outputs.loss.backward()
 
-            with timers["step"]:
+            with timers["update"]:
                 optimizer.step()
                 lr_scheduler.step()
 
@@ -143,8 +149,6 @@ def main():
                     t.reset()
 
             if state["global_step"] % args.ckpt_freq == 0:
-                logger.info(f"{state}")
-
                 os.makedirs(experiment_dir, exist_ok=True)
                 torch.save(optimizer.state_dict(), optimizer_path)
                 torch.save(model.state_dict(), model_path)
@@ -155,9 +159,7 @@ def main():
         state["epoch_step"] = 0
 
 
-def _load_and_preprocess_data(args, config):
-    tokenizer = AutoTokenizer.from_pretrained(args.model_name, trust_remote_code=True)
-
+def _load_and_preprocess_data(args, tokenizer, config):
     data = datasets.load_dataset(args.dataset_name, trust_remote_code=True)
 
     column_names = data["train"].column_names
@@ -170,6 +172,8 @@ def _load_and_preprocess_data(args, config):
         tokenize_function,
         batched=True,
         remove_columns=column_names,
+        num_proc=multiprocessing.cpu_count(),
+        load_from_cache_file=True,
         desc="Running tokenizer on dataset",
     )
 
@@ -196,6 +200,8 @@ def _load_and_preprocess_data(args, config):
     lm_datasets = tokenized_datasets.map(
         group_texts,
         batched=True,
+        num_proc=multiprocessing.cpu_count(),
+        load_from_cache_file=True,
         desc=f"Grouping texts in chunks of {block_size}",
     )
 
