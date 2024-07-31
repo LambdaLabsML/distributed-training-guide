@@ -8,6 +8,9 @@ import time
 
 import torch
 from torch.utils.data import DataLoader
+from torch.utils.data.distributed import DistributedSampler
+from torch.nn.parallel import DistributedDataParallel as DDP
+from torch import distributed as dist
 import numpy
 import wandb
 import tqdm
@@ -35,26 +38,32 @@ def main():
     numpy.random.seed(args.seed)
     random.seed(args.seed)
 
+    dist.init_process_group(backend="nccl" if dist.is_nccl_available() else "mpi")
+
+    rank = dist.get_rank()
+    world_size = dist.get_world_size()
+
     logging.basicConfig(level=logging.INFO)
     logger = logging.getLogger(__name__)
+    logger.disabled = rank > 0
     logger.info(f"{args}")
 
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device = torch.device(f"cuda:{rank}" if torch.cuda.is_available() else "cpu")
     dtype = torch.bfloat16
 
     config = AutoConfig.from_pretrained(args.model_name, trust_remote_code=True)
     model = AutoModelForCausalLM.from_config(config, trust_remote_code=True).to(
         dtype=dtype, device=device
     )
+    model = DDP(model, device_ids=[rank])
 
     train_data = _load_and_preprocess_data(args, config)
 
     train_loader = DataLoader(
         train_data,
         batch_size=args.batch_size,
-        shuffle=True,
-        drop_last=True,
         collate_fn=default_data_collator,
+        sampler=DistributedSampler(train_data, shuffle=True, drop_last=True),
     )
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr)
@@ -97,7 +106,7 @@ def main():
     timers = {k: LocalTimer(device) for k in ["data", "forward", "backward", "step"]}
 
     for state["epoch"] in range(state["epoch"], args.num_epochs):
-        progress_bar = tqdm.tqdm(range(len(train_loader)))
+        progress_bar = tqdm.tqdm(range(len(train_loader)), disable=rank > 0)
         if state["epoch_step"] > 0:
             progress_bar.update(state["epoch_step"])
         for i_step, batch in enumerate(train_loader):
@@ -127,12 +136,14 @@ def main():
             if state["global_step"] % args.log_freq == 0:
                 wandb.log(
                     {
-                        "lr": lr_scheduler.get_last_lr()[0],
-                        "running_loss": state["running_loss"] / args.log_freq,
-                        "epoch": state["epoch"],
-                        "time/total": sum(t.avg_elapsed_ms() for t in timers.values()),
+                        f"lr/{rank}": lr_scheduler.get_last_lr()[0],
+                        f"running_loss/{rank}": state["running_loss"] / args.log_freq,
+                        f"epoch/{rank}": state["epoch"],
+                        f"time/total/{rank}": sum(
+                            t.avg_elapsed_ms() for t in timers.values()
+                        ),
                         **{
-                            f"time/{k}": timer.avg_elapsed_ms()
+                            f"time/{k}/{rank}": timer.avg_elapsed_ms()
                             for k, timer in timers.items()
                         },
                     },
@@ -145,12 +156,14 @@ def main():
             if state["global_step"] % args.ckpt_freq == 0:
                 logger.info(f"{state}")
 
-                os.makedirs(experiment_dir, exist_ok=True)
-                torch.save(optimizer.state_dict(), optimizer_path)
-                torch.save(model.state_dict(), model_path)
-                torch.save(lr_scheduler.state_dict(), lr_scheduler_path)
-                with open(state_path, "w") as fp:
-                    json.dump(state, fp)
+                if rank == 0:
+                    os.makedirs(experiment_dir, exist_ok=True)
+                    torch.save(optimizer.state_dict(), optimizer_path)
+                    torch.save(model.state_dict(), model_path)
+                    torch.save(lr_scheduler.state_dict(), lr_scheduler_path)
+                    with open(state_path, "w") as fp:
+                        json.dump(state, fp)
+                dist.barrier()
 
         state["epoch_step"] = 0
 
@@ -250,3 +263,4 @@ if __name__ == "__main__":
         main()
     finally:
         wandb.finish()
+        dist.destroy_process_group()
