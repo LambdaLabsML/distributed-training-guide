@@ -1,0 +1,7 @@
+- go into scaling lr as effective batch size increases
+- discuss gradient accumulation
+- demonstrate the synchronization slowdown with batches of different sizes
+- add fault tolerance to examples
+- add logging/error reporting; can we get errors to show in wandb?
+- deepspeed section discussion optimization
+- colossalai section
