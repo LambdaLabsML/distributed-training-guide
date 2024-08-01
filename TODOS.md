@@ -8,6 +8,8 @@
     - how to make sure @record & wandb.finish work together
 - deepspeed section discussion optimization
 - colossalai section
+- slurm section
+- runmpi section
 - add code diffs to all the readmes
 - add nccl/power draw/etc metric diagnoses
 - add config/tokenizer to output directory
