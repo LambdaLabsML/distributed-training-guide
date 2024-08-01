@@ -6,12 +6,15 @@ import random
 import os
 import time
 from pathlib import Path
+from datetime import timedelta
 
 import torch
 from torch.utils.data import DataLoader
 from torch.utils.data.distributed import DistributedSampler
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch import distributed as dist
+from torch.distributed.elastic.multiprocessing.errors import record
+
 import numpy
 import wandb
 import tqdm
@@ -24,6 +27,7 @@ from transformers import (
 )
 
 
+@record
 def main():
     parser = _get_parser()
     args = parser.parse_args()
@@ -38,13 +42,16 @@ def main():
 
     print(args)
 
-    dist.init_process_group(backend="nccl" if dist.is_nccl_available() else "mpi")
+    dist.init_process_group(
+        backend="nccl" if dist.is_nccl_available() else "mpi",
+        timeout=timedelta(hours=24),
+    )
 
     rank = dist.get_rank()
+    local_rank = rank % torch.cuda.device_count()
     world_size = dist.get_world_size()
-    assert world_size == torch.cuda.device_count()
 
-    device = torch.device(f"cuda:{rank}" if torch.cuda.is_available() else "cpu")
+    device = torch.device(f"cuda:{local_rank}" if torch.cuda.is_available() else "cpu")
     dtype = torch.bfloat16
 
     def _load_to_device(p):
@@ -63,10 +70,11 @@ def main():
     model = DDP(model, device_ids=[rank])
 
     # NOTE: since this can download data, make sure to do the main process first
-    if rank == 0:
+    # NOTE: We need each machine to download the data if needed
+    if local_rank == 0:
         train_data = _load_and_preprocess_data(args, tokenizer, config)
     dist.barrier()
-    if rank > 0:
+    if local_rank > 0:
         train_data = _load_and_preprocess_data(args, tokenizer, config)
 
     train_loader = DataLoader(
@@ -102,15 +110,15 @@ def main():
         resumed = True
 
     dist.barrier()
-    if rank == 0:
+    if local_rank == 0:
         exp_dir.mkdir(parents=True, exist_ok=True)
     dist.barrier()
 
     wandb.init(
         project="distributed-training-tutorials",
-        dir=exp_dir / f"gpu-{rank}",
+        dir=exp_dir / f"rank-{rank}",
         group=args.experiment_name,
-        name=f"gpu-{rank}",
+        name=f"rank-{rank}",
         resume="must" if resumed else None,
         save_code=True,
         config={
@@ -119,6 +127,7 @@ def main():
             "training_data_size": len(train_data),
             "num_batches": len(train_loader),
             "rank": rank,
+            "local_rank": local_rank,
             "world_size": world_size,
         },
     )
@@ -126,7 +135,7 @@ def main():
     timers = {k: LocalTimer(device) for k in ["data", "forward", "backward", "update"]}
 
     for state["epoch"] in range(state["epoch"], args.num_epochs):
-        progress_bar = tqdm.tqdm(range(len(train_loader)), disable=rank > 0)
+        progress_bar = tqdm.tqdm(range(len(train_loader)), disable=local_rank > 0)
         if state["epoch_step"] > 0:
             progress_bar.update(state["epoch_step"])
         for i_step, batch in enumerate(train_loader):
