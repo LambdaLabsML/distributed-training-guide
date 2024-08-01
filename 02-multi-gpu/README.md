@@ -15,15 +15,14 @@ OMP_NUM_THREADS=1 torchrun --standalone \
 
 Before we get into the changes required to do distributed training, let's think a little bit. If you've ever done parallel computations before, you know one way to achieve parallelization is to simply split your workload over all your cores. This is really useful if your task is relatively the same for all of the things you want to process. In fact, this is how python's multiprocessing.Pool.map object works.
 
-Well distributed training with a GPU actually works the same way - we are splitting our workload (which is our dataset) over multiple GPUs.
+Well distributed training with a GPU actually works the same way - we are splitting our workload (which is the batches from our dataset) over multiple GPUs.
 
 However we have an additional problem: how do we ensure that the model on all of our GPUs is the same?
 
 We can actually achieve this in a very clever way. For sake of simplicity let's assume:
-1. We have N GPUs we want to use
-2. Our model and optimizer fully fit on our GPU
-3. We initialize our model the exact same way on all of our GPUs
-4. Our optimizer has the exact same settings on all of our GPUs
+1. Our model and optimizer fully fit on every GPU
+2. We initialize our model the exact same way on all of our GPUs
+3. Our optimizer has the exact same settings on all of our GPUs
 
 Now let's focus on our training loop. The canonical one in pytorch is:
 
@@ -34,30 +33,39 @@ loss.backward()
 optimizer.step()
 ```
 
-Now if you go line by line, the first 3 lines of the above can all be done separately. `loss.backward()` will compute gradients in each of our training processes. The clever bit is that `optimizer.step()` will synchronize the gradients across all processes before actually updating the model.
+The first 3 lines of the above can all be done asychronously. `loss.backward()` will compute gradients in each of our training processes. The clever bit is that `optimizer.step()` will synchronize the gradients across all processes before actually updating the model parameters.
 
-I want to call out here that `optimizer.step()` is an actual synchronization point. **All processes have to call optimizer.step() the same number of times**.
+So to be explicit: **`optimizer.step()` is a synchronization point across ALL processes**.
 
 So how does pytorch achieve this?
 
 ### Splitting data across our workers - `torch.utils.data.distributed.DistributedSampler`
 
-In our normal training script we use a `torch.utils.data.DataLoader` to batch our data. One of the arguments to DataLoader is a `sampler`, which basically samples items from the dataset when constructing the batches. You can think of the sampler as doing `random.choice(range(len(dataset)))`.
+In our normal training script we use a `torch.utils.data.DataLoader` to batch our data. One of the arguments to DataLoader is a `sampler`, which basically samples items from the dataset when constructing the batches. You can think of the sampler as doing:
+
+```
+# simplified Sampler
+worker_len = len(dataset)
+random.choice(range(worker_len))
+```
 
 The clever thing that the DistributedSampler does is it partitions the length of the dataset across each of our workers. You don't even have to partition the actual dataset - it just chooses the integers that it returns from a specific subset of the dataset:
 
 ```
+# simplified DistributedSampler
 worker_len = len(dataset) // world_size
-random.choice(range(worker_len)) + worker_len
+rank * worker_len + random.choice(range(worker_len))
 ```
 
 ### Gradient Synchronization - `torch.nn.parallel.DistributedDataParallel`
 
+Funnily enough you might assume that the DDP module splits batches across processes, but that is not what it does at all!
+
 This is a model wrapper class that sets up the gradient synchronization. I encourage you to read the documentation for this, it's very informative: https://pytorch.org/docs/stable/generated/torch.nn.parallel.DistributedDataParallel.html.
 
-This class also ensures model states are equal when you construct it.
+This class also ensures that *model parameters are equal when you construct it*!
 
-It achieves this through some very special model hooks.
+It achieves all of this through some very special model hooks.
 
 ## Code Changes
 

@@ -44,7 +44,7 @@ def main():
     world_size = dist.get_world_size()
     assert world_size == torch.cuda.device_count()
 
-    device = torch.device(f"cuda:{rank}" if torch.cuda.is_available() else "cpu")
+    device = torch.device(f"cuda:{rank}")
     dtype = torch.bfloat16
 
     def _load_to_device(p):
@@ -267,7 +267,7 @@ def _get_parser() -> argparse.ArgumentParser:
     parser.add_argument("--experiment-name", default=None, required=True)
     parser.add_argument("--dataset-name", default=None, required=True)
     parser.add_argument("--model-name", default=None, required=True)
-    parser.add_argument("--save-dir", default=".")
+    parser.add_argument("--save-dir", default="./outputs")
     parser.add_argument("--seed", default=0, type=int)
     parser.add_argument("--num-epochs", default=100, type=int)
     parser.add_argument("--lr", default=3e-5, type=float)

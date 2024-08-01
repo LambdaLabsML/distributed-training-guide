@@ -10,3 +10,4 @@
 - colossalai section
 - add code diffs to all the readmes
 - add nccl/power draw/etc metric diagnoses
+- add config/tokenizer to output directory
