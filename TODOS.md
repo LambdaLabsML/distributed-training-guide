@@ -5,3 +5,4 @@
 - add logging/error reporting; can we get errors to show in wandb?
 - deepspeed section discussion optimization
 - colossalai section
+- add code diffs to all the readmes

@@ -14,6 +14,4 @@ python train_llm.py \
 
 ## Features
 
-1. Resuming experiment (along with how to configure wandb to resume experiments).
-2. Inner loop timing to monitor how long things are taking
-3. 
+TODO
