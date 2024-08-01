@@ -79,7 +79,7 @@ def main():
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr)
     lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-        optimizer, T_max=len(train_loader), eta_min=args.lr * 1e-2
+        optimizer, T_max=1000, eta_min=args.lr * 1e-2
     )
 
     exp_dir: Path = Path(args.save_dir) / args.experiment_name
@@ -110,12 +110,15 @@ def main():
         project="distributed-training-tutorials",
         dir=exp_dir / f"gpu-{rank}",
         group=args.experiment_name,
-        job_type="train",
         name=f"gpu-{rank}",
         resume="must" if resumed else None,
         save_code=True,
-        config=vars(args),
-        settings=wandb.Settings(_disable_stats=rank > 0),
+        config={
+            "args": vars(args),
+            "embedding_size": len(tokenizer),
+            "training_data_size": len(train_data),
+            "num_batches": len(train_loader),
+        },
     )
 
     timers = {k: LocalTimer(device) for k in ["data", "forward", "backward", "update"]}

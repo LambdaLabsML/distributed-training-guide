@@ -60,7 +60,7 @@ def main():
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr)
     lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-        optimizer, T_max=len(train_loader), eta_min=args.lr * 1e-2
+        optimizer, T_max=1000, eta_min=args.lr * 1e-2
     )
 
     exp_dir: Path = Path(args.save_dir) / args.experiment_name
@@ -88,10 +88,14 @@ def main():
         project="distributed-training-tutorials",
         dir=exp_dir,
         name=args.experiment_name,
-        id=args.experiment_name,
         resume="must" if resumed else None,
         save_code=True,
-        config=vars(args),
+        config={
+            "args": vars(args),
+            "embedding_size": len(tokenizer),
+            "training_data_size": len(train_data),
+            "num_batches": len(train_loader),
+        },
     )
 
     timers = {k: LocalTimer(device) for k in ["data", "forward", "backward", "update"]}
