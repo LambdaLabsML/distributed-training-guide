@@ -82,4 +82,8 @@ torch.set_num_interop_threads(1)
 
 in your training code, but torchrun will give a warning if you don't set the environment variable.
 
-###
+### wandb groups
+
+While a lot of wandb usage in distributed training code seems to only initialize wandb from the main process, there's actually another way - groups! There are a ton of benefits from doing wandb in each process:
+1. You can dive down into each worker's individual metrics/progress
+2. Errors for each worker are logged.

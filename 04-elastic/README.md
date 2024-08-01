@@ -6,3 +6,4 @@ Elastic meaning workers that can restart
 
 - `rank`, `local_rank`, and `world_size` are all not stable
 - How to determine if a node has a problem that simply restarting *can* fix.
+- How to record that a worker had an issue & was restarted in wandb
