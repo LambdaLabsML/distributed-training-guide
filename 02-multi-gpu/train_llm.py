@@ -6,12 +6,15 @@ import random
 import os
 import time
 from pathlib import Path
+import sys
 
 import torch
 from torch.utils.data import DataLoader
 from torch.utils.data.distributed import DistributedSampler
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch import distributed as dist
+from torch.distributed.elastic.multiprocessing.errors import record
+
 import numpy
 import wandb
 import tqdm
@@ -24,6 +27,7 @@ from transformers import (
 )
 
 
+@record
 def main():
     parser = _get_parser()
     args = parser.parse_args()
@@ -281,5 +285,5 @@ if __name__ == "__main__":
     try:
         main()
     finally:
-        wandb.finish()
+        wandb.finish(exit_code=int(sys.exc_info()[0] is not None))
         dist.destroy_process_group()
