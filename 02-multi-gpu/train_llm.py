@@ -1,5 +1,4 @@
 import argparse
-from datetime import timedelta
 from itertools import chain
 import json
 import multiprocessing
@@ -12,7 +11,7 @@ import logging
 import torch
 from torch.utils.data import DataLoader
 from torch.utils.data.distributed import DistributedSampler
-from torch.nn.parallel import DistributedDataParallel as DDP
+from torch.nn.parallel import DistributedDataParallel
 from torch import distributed as dist
 from torch.distributed.elastic.multiprocessing.errors import record
 
@@ -72,7 +71,7 @@ def main():
     if len(tokenizer) > embedding_size:
         model.resize_token_embeddings(len(tokenizer))
 
-    model = DDP(model, device_ids=[rank])
+    model = DistributedDataParallel(model, device_ids=[rank], output_device=rank)
 
     # NOTE: since this can download data, make sure to do the main process first
     if rank == 0:
@@ -120,14 +119,16 @@ def main():
         _LOGGER.info(f"Creating experiment root directory")
         exp_dir.mkdir(parents=True, exist_ok=True)
     dist.barrier()
-    _LOGGER.info(f"[{rank}] Worker saving to {exp_dir / f'gpu-{rank}'}")
+
     (exp_dir / f"gpu-{rank}").mkdir(parents=True, exist_ok=True)
+    _LOGGER.info(f"[{rank}] Worker saving to {exp_dir / f'gpu-{rank}'}")
 
     wandb.init(
         project="distributed-training-tutorials",
         dir=exp_dir / f"gpu-{rank}",
         group=args.experiment_name,
         name=f"gpu-{rank}",
+        id=f"gpu-{rank}",
         resume="must" if resumed else None,
         save_code=True,
         config={

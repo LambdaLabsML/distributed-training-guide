@@ -98,6 +98,7 @@ def main():
         project="distributed-training-tutorials",
         dir=exp_dir,
         name=args.experiment_name,
+        id=args.experiment_name,
         resume="must" if resumed else None,
         save_code=True,
         config={

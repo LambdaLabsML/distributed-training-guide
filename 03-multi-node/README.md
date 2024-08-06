@@ -1,18 +1,26 @@
 # Multi GPU across multiple nodes
 
+Run this command on **every** participating node
+
 ```bash
-OMP_NUM_THREADS=1 torchrun \
-    --rdzv-id TODO \
-    --rdzv-backend TODO \
-    --rdzv-endpoint TODO \
+TORCHELASTIC_ERROR_FILE=./error.json OMP_NUM_THREADS=1 torchrun \
+    --rdzv-id multi-node \
+    --rdzv-backend c10d \
+    --rdzv-endpoint <IP ADDRESS of main node>:<port> \
     --nnodes 2 \
     --nproc-per-node gpu \
     train_llm.py \
-    --experiment-name gpt2-openwebtext-A100 \
+    --experiment-name multi-node \
     --dataset-name Skylion007/openwebtext \
     --model-name openai-community/gpt2 \
     --batch-size 64
 ```
+
+Assumes:
+1. You are using the same enviroment on both machines
+2. T
+3. You are logged into wandb on both machines
+
 
 ## How Multi Node works
 
