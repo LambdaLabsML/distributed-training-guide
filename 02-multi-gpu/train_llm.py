@@ -1,4 +1,5 @@
 import argparse
+from datetime import timedelta
 from itertools import chain
 import json
 import multiprocessing
@@ -6,7 +7,7 @@ import random
 import os
 import time
 from pathlib import Path
-import sys
+import logging
 
 import torch
 from torch.utils.data import DataLoader
@@ -26,11 +27,17 @@ from transformers import (
     default_data_collator,
 )
 
+_LOGGER = logging.getLogger(__name__)
+
 
 @record
 def main():
+    logging.basicConfig(level=logging.INFO)
+
     parser = _get_parser()
     args = parser.parse_args()
+
+    _LOGGER.info(args)
 
     torch.set_num_threads(1)
     torch.set_num_interop_threads(1)
@@ -40,16 +47,17 @@ def main():
     numpy.random.seed(args.seed)
     random.seed(args.seed)
 
-    print(args)
-
     dist.init_process_group(backend="nccl" if dist.is_nccl_available() else "mpi")
 
     rank = dist.get_rank()
     world_size = dist.get_world_size()
     assert world_size == torch.cuda.device_count()
 
+    _LOGGER.info(f"rank={rank} world size={world_size}")
+
     device = torch.device(f"cuda:{rank}")
     dtype = torch.bfloat16
+    torch.cuda.set_device(device)
 
     def _load_to_device(p):
         return torch.load(p, map_location=device, weights_only=True)
@@ -72,14 +80,16 @@ def main():
     dist.barrier()
     if rank > 0:
         train_data = _load_and_preprocess_data(args, tokenizer, config)
+    _LOGGER.info(f"[{rank}] {len(train_data)} training samples")
 
-    train_loader = DataLoader(
+    dataloader = DataLoader(
         train_data,
         batch_size=args.batch_size,
         collate_fn=default_data_collator,
         # NOTE: this sampler will split dataset evenly across workers
         sampler=DistributedSampler(train_data, shuffle=True, drop_last=True),
     )
+    _LOGGER.info(f"[{rank}] {len(dataloader)} batches per epoch")
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr)
     lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
@@ -102,13 +112,16 @@ def main():
         lr_scheduler.load_state_dict(_load_to_device(exp_dir / "lr_scheduler.pt"))
         with open(os.path.join(exp_dir, "state.json")) as fp:
             state = json.load(fp)
-        print(f"Resumed from {exp_dir} | {state}")
         resumed = True
+    _LOGGER.info(f"[{rank}] Resumed={resumed} | {state}")
 
     dist.barrier()
     if rank == 0:
+        _LOGGER.info(f"Creating experiment root directory")
         exp_dir.mkdir(parents=True, exist_ok=True)
     dist.barrier()
+    _LOGGER.info(f"[{rank}] Worker saving to {exp_dir / f'gpu-{rank}'}")
+    (exp_dir / f"gpu-{rank}").mkdir(parents=True, exist_ok=True)
 
     wandb.init(
         project="distributed-training-tutorials",
@@ -121,7 +134,7 @@ def main():
             "args": vars(args),
             "embedding_size": len(tokenizer),
             "training_data_size": len(train_data),
-            "num_batches": len(train_loader),
+            "num_batches": len(dataloader),
             "rank": rank,
             "world_size": world_size,
         },
@@ -130,10 +143,14 @@ def main():
     timers = {k: LocalTimer(device) for k in ["data", "forward", "backward", "update"]}
 
     for state["epoch"] in range(state["epoch"], args.num_epochs):
-        progress_bar = tqdm.tqdm(range(len(train_loader)), disable=rank > 0)
+        _LOGGER.info(
+            f"[{rank}] Begin epoch {state['epoch']} at step {state['epoch_step']}"
+        )
+
+        progress_bar = tqdm.tqdm(range(len(dataloader)), disable=rank > 0)
         if state["epoch_step"] > 0:
             progress_bar.update(state["epoch_step"])
-        for i_step, batch in enumerate(train_loader):
+        for i_step, batch in enumerate(dataloader):
             if i_step < state["epoch_step"]:
                 # NOTE: for resuming
                 continue
@@ -163,8 +180,8 @@ def main():
                         "lr": lr_scheduler.get_last_lr()[0],
                         "running_loss": state["running_loss"] / args.log_freq,
                         "epoch": state["epoch"],
-                        "epoch_progress": state["epoch_step"] / len(train_loader),
-                        "num_batches_remaining": len(train_loader) - i_step,
+                        "epoch_progress": state["epoch_step"] / len(dataloader),
+                        "num_batches_remaining": len(dataloader) - i_step,
                         "time/total": sum(t.avg_elapsed_ms() for t in timers.values()),
                         **{
                             f"time/{k}": timer.avg_elapsed_ms()
@@ -190,7 +207,9 @@ def main():
 
 
 def _load_and_preprocess_data(args, tokenizer, config):
-    data = datasets.load_dataset(args.dataset_name, trust_remote_code=True)
+    data = datasets.load_dataset(
+        args.dataset_name, trust_remote_code=True, cache_dir=args.dataset_cache_root
+    )
 
     column_names = data["train"].column_names
     text_column_name = "text" if "text" in column_names else column_names[0]
@@ -240,20 +259,21 @@ def _load_and_preprocess_data(args, tokenizer, config):
 
 class LocalTimer:
     def __init__(self, device: torch.device):
-        self.device = device
+        if device.type == "cpu":
+            self.synchronize = lambda: torch.cpu.synchronize(device=device)
+        elif device.type == "cuda":
+            self.synchronize = lambda: torch.cuda.synchronize(device=device)
         self.measurements = []
         self.start_time = None
 
     def __enter__(self):
-        if self.device.type == "cuda":
-            torch.cuda.synchronize(device=self.device)
+        self.synchronize()
         self.start_time = time.time()
         return self
 
     def __exit__(self, type, value, traceback):
         if traceback is None:
-            if self.device.type == "cuda":
-                torch.cuda.synchronize(device=self.device)
+            self.synchronize()
             end_time = time.time()
             self.measurements.append(end_time - self.start_time)
         self.start_time = None
@@ -271,13 +291,14 @@ def _get_parser() -> argparse.ArgumentParser:
     parser.add_argument("--experiment-name", default=None, required=True)
     parser.add_argument("--dataset-name", default=None, required=True)
     parser.add_argument("--model-name", default=None, required=True)
-    parser.add_argument("--save-dir", default="./outputs")
+    parser.add_argument("--save-dir", default="../outputs")
     parser.add_argument("--seed", default=0, type=int)
     parser.add_argument("--num-epochs", default=100, type=int)
     parser.add_argument("--lr", default=3e-5, type=float)
     parser.add_argument("--batch-size", default=1, type=int)
     parser.add_argument("--log-freq", default=100, type=int)
     parser.add_argument("--ckpt-freq", default=500, type=int)
+    parser.add_argument("--dataset-cache-root", default="../.cache")
     return parser
 
 
@@ -285,5 +306,4 @@ if __name__ == "__main__":
     try:
         main()
     finally:
-        wandb.finish(exit_code=int(sys.exc_info()[0] is not None))
         dist.destroy_process_group()

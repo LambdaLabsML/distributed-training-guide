@@ -2,10 +2,6 @@
 - discuss gradient accumulation
 - demonstrate the synchronization slowdown with batches of different sizes
 - add fault tolerance to examples
-- add logging/error reporting; can we get errors to show in wandb?
-    - add stdout/stderr to log file
-    - add error code to wandb.finish
-    - how to make sure @record & wandb.finish work together
 - deepspeed section discussion optimization
 - colossalai section
 - slurm section
@@ -13,3 +9,5 @@
 - add code diffs to all the readmes
 - add nccl/power draw/etc metric diagnoses
 - add config/tokenizer to output directory
+- add note about where dataset preprocessing is from
+- add note about dataset choice from https://huggingface.co/datasets?task_categories=task_categories:text-generation&sort=downloads

@@ -1,7 +1,7 @@
 # Multi GPU on a single node
 
 ```bash
-OMP_NUM_THREADS=1 torchrun --standalone \
+TORCHELASTIC_ERROR_FILE=./error.json OMP_NUM_THREADS=1 torchrun --standalone \
     --nnodes 1 \
     --nproc-per-node gpu \
     train_llm.py \
