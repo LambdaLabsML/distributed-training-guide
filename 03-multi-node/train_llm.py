@@ -46,8 +46,6 @@ def main():
     numpy.random.seed(args.seed)
     random.seed(args.seed)
 
-    print(args)
-
     dist.init_process_group(backend="nccl" if dist.is_nccl_available() else "mpi")
 
     rank = dist.get_rank()
@@ -109,6 +107,7 @@ def main():
         "epoch_step": 0,
         "running_loss": 0,
     }
+
     resumed = False
     if exp_dir.exists():
         model.load_state_dict(_load_to_device(exp_dir / "model.pt"))
@@ -116,7 +115,6 @@ def main():
         lr_scheduler.load_state_dict(_load_to_device(exp_dir / "lr_scheduler.pt"))
         with open(os.path.join(exp_dir, "state.json")) as fp:
             state = json.load(fp)
-        print(f"Resumed from {exp_dir} | {state}")
         resumed = True
     _LOGGER.info(f"[{rank}] Resumed={resumed} | {state}")
 
