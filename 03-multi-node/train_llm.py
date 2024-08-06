@@ -88,6 +88,7 @@ def main():
         train_data,
         batch_size=args.batch_size,
         collate_fn=default_data_collator,
+        num_workers=1,
         # NOTE: this sampler will split dataset evenly across workers
         sampler=DistributedSampler(train_data, shuffle=True, drop_last=True),
     )
@@ -132,7 +133,7 @@ def main():
         dir=exp_dir / f"rank-{rank}",
         group=args.experiment_name,
         name=f"rank-{rank}",
-        id=f"rank-{rank}",
+        id=f"{args.experiment_name}-{rank}",
         resume="must" if resumed else None,
         save_code=True,
         config={
@@ -146,7 +147,9 @@ def main():
         },
     )
 
-    timers = {k: LocalTimer(device) for k in ["data", "forward", "backward", "update"]}
+    timers = {
+        k: LocalTimer(device) for k in ["data", "forward", "backward", "update", "lag"]
+    }
 
     for state["epoch"] in range(state["epoch"], args.num_epochs):
         _LOGGER.info(
@@ -156,20 +159,33 @@ def main():
         progress_bar = tqdm.tqdm(range(len(dataloader)), disable=rank > 0)
         if state["epoch_step"] > 0:
             progress_bar.update(state["epoch_step"])
-        for i_step, batch in enumerate(dataloader):
+
+        data_iter = iter(dataloader)
+
+        for i_step in range(len(dataloader)):
+            with timers["data"], torch.no_grad():
+                batch = next(data_iter)
+                batch = {k: v.to(device=device) for k, v in batch.items()}
+
             if i_step < state["epoch_step"]:
                 # NOTE: for resuming
                 continue
 
-            with timers["data"], torch.no_grad():
-                batch = {k: v.to(device=device) for k, v in batch.items()}
+            with timers["lag"]:
+                dist.barrier()
 
             with timers["forward"]:
                 outputs = model(**batch)
 
+            with timers["lag"]:
+                dist.barrier()
+
             with timers["backward"]:
                 optimizer.zero_grad()
                 outputs.loss.backward()
+
+            with timers["lag"]:
+                dist.barrier()
 
             with timers["update"]:
                 optimizer.step()

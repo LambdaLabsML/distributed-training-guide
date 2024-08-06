@@ -128,7 +128,7 @@ def main():
         dir=exp_dir / f"gpu-{rank}",
         group=args.experiment_name,
         name=f"gpu-{rank}",
-        id=f"gpu-{rank}",
+        id=f"{args.experiment_name}-{rank}",
         resume="must" if resumed else None,
         save_code=True,
         config={
@@ -141,7 +141,9 @@ def main():
         },
     )
 
-    timers = {k: LocalTimer(device) for k in ["data", "forward", "backward", "update"]}
+    timers = {
+        k: LocalTimer(device) for k in ["data", "forward", "backward", "update", "lag"]
+    }
 
     for state["epoch"] in range(state["epoch"], args.num_epochs):
         _LOGGER.info(
@@ -165,6 +167,9 @@ def main():
             with timers["backward"]:
                 optimizer.zero_grad()
                 outputs.loss.backward()
+
+            with timers["lag"]:
+                dist.barrier()
 
             with timers["update"]:
                 optimizer.step()
