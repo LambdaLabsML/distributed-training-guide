@@ -5,3 +5,17 @@ Often times when debugging on a single node, we have direct access to the proces
 We have all the information! This makes debugging a problem a breeze.
 
 When in a distributed setting this isn't the case. We have to carefully set up all of the logging so we have all of that information, in case a crash or hang happens.
+
+## torchrun log files
+
+```
+torchrun --log-dir ./logs --redirects 3 ...
+```
+
+## TORCHELASTIC_ERROR_FILE
+
+requires
+
+```
+
+```
