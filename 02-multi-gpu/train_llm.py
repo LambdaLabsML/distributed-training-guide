@@ -127,7 +127,7 @@ def main():
         project="distributed-training-tutorials",
         dir=exp_dir / f"gpu-{rank}",
         group=args.experiment_name,
-        name=f"gpu-{rank}",
+        name=args.experiment_name + "/" + f"gpu-{rank}",
         id=f"{args.experiment_name}-{rank}",
         resume="must" if resumed else None,
         save_code=True,
