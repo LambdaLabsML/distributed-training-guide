@@ -16,29 +16,52 @@ diff --git a/03-multi-node/train_llm.py b/05-minimizing-synchronization-time/tra
 index e593b16..35eb66f 100644
 --- a/03-multi-node/train_llm.py
 +++ b/05-minimizing-synchronization-time/train_llm.py
-with timers["data"], torch.no_grad():
-    batch = next(batch_iter)
-    batch = {k: v.to(device=device) for k, v in batch.items()}
-
-+ with timers["waiting"]:
-+     dist.barrier()
-
-with timers["forward"]:
-    outputs = model(**batch)
-
-+ with timers["waiting"]:
-+     dist.barrier()
-
-with timers["backward"]:
-    optimizer.zero_grad()
-    outputs.loss.backward()
-
-+ with timers["waiting"]:
-+     dist.barrier()
-
-with timers["update"]:
-    optimizer.step()
-    lr_scheduler.step()
+-    timers = {k: LocalTimer(device) for k in ["data", "forward", "backward", "update"]}
++    timers = {
++        k: LocalTimer(device)
++        for k in ["data", "forward", "backward", "update", "waiting"]
++    }
+ 
+     for state["epoch"] in range(state["epoch"], args.num_epochs):
+         _LOGGER.info(
+@@ -157,21 +161,34 @@ def main():
+         progress_bar = tqdm.tqdm(range(len(dataloader)), disable=rank > 0)
+         if state["epoch_step"] > 0:
+             progress_bar.update(state["epoch_step"])
+-        for i_step, batch in enumerate(dataloader):
++
++        batch_iter = iter(dataloader)
++
++        for i_step in range(len(dataloader)):
++            with timers["data"], torch.no_grad():
++                batch = next(batch_iter)
++                batch = {k: v.to(device=device) for k, v in batch.items()}
++
+             if i_step < state["epoch_step"]:
+                 # NOTE: for resuming
+                 continue
+ 
+-            with timers["data"], torch.no_grad():
+-                batch = {k: v.to(device=device) for k, v in batch.items()}
++            with timers["waiting"]:
++                dist.barrier()
+ 
+             with timers["forward"]:
+                 outputs = model(**batch)
+ 
++            with timers["waiting"]:
++                dist.barrier()
++
+             with timers["backward"]:
+                 optimizer.zero_grad()
+                 outputs.loss.backward()
+ 
++            with timers["waiting"]:
++                dist.barrier()
++
+             with timers["update"]:
+                 optimizer.step()
+                 lr_scheduler.step()
 ```
 
 ## Causes of slowdowns
