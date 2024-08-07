@@ -22,7 +22,7 @@ Notably we are also saving & restoring the rng states from various libraries, an
 
 ```diff
 diff --git a/03-multi-node/train_llm.py b/09-determinism/train_llm.py
-index e593b16..759c2cc 100644
+index 24eacbd..0a3a029 100644
 --- a/03-multi-node/train_llm.py
 +++ b/09-determinism/train_llm.py
 @@ -40,6 +40,7 @@ def main():
@@ -51,42 +51,35 @@ index e593b16..759c2cc 100644
      )
      _LOGGER.info(f"[{rank}] {len(dataloader)} batches per epoch")
  
-@@ -107,6 +112,12 @@ def main():
-         "global_step": 0,
-         "epoch_step": 0,
-         "running_loss": 0,
-+        "rng": {
-+            "np": numpy.random.get_state(),
-+            "random": random.getstate(),
-+            "torch": torch.get_rng_state(),
-+            "cuda": torch.cuda.get_rng_state_all(),
-+        },
-     }
- 
-     resumed = False
-@@ -116,6 +127,10 @@ def main():
+@@ -116,6 +121,13 @@ def main():
          lr_scheduler.load_state_dict(_load_to_device(exp_dir / "lr_scheduler.pt"))
          with open(exp_dir / "state.json") as fp:
              state = json.load(fp)
-+            numpy.random.set_state(state["rng"]["np"])
-+            random.setstate(state["rng"]["random"])
-+            torch.set_rng_state(state["rng"]["torch"])
-+            torch.cuda.set_rng_state_all(state["rng"]["cuda"])
++        rng_state = torch.load(
++            exp_dir / "rng.pt", weights_only=False, map_location="cpu"
++        )
++        numpy.random.set_state(rng_state["np"])
++        random.setstate(rng_state["random"])
++        torch.set_rng_state(rng_state["torch"])
++        torch.cuda.set_rng_state(rng_state["cuda"][local_rank], device)
          resumed = True
      _LOGGER.info(f"[{rank}] Resumed={resumed} | {state}")
  
-@@ -206,6 +221,10 @@ def main():
-                     torch.save(optimizer.state_dict(), exp_dir / "optimizer.pt")
-                     torch.save(model.state_dict(), exp_dir / "model.pt")
+@@ -208,11 +220,26 @@ def main():
                      torch.save(lr_scheduler.state_dict(), exp_dir / "lr_scheduler.pt")
-+                    state["rng"]["np"] = numpy.random.get_state()
-+                    state["rng"]["random"] = random.getstate()
-+                    state["rng"]["torch"] = torch.get_rng_state()
-+                    state["rng"]["cuda"] = torch.cuda.get_rng_state_all()
                      with open(exp_dir / "state.json", "w") as fp:
                          json.dump(state, fp)
++                    torch.save(
++                        {
++                            "np": numpy.random.get_state(),
++                            "random": random.getstate(),
++                            "torch": torch.get_rng_state(),
++                            "cuda": torch.cuda.get_rng_state_all(),
++                        },
++                        exp_dir / "rng.pt",
++                    )
                  dist.barrier()
-@@ -213,6 +232,12 @@ def main():
+ 
          state["epoch_step"] = 0
  
  
@@ -94,4 +87,9 @@ index e593b16..759c2cc 100644
 +    worker_seed = torch.initial_seed() % 2**32
 +    numpy.random.seed(worker_seed)
 +    random.seed(worker_seed)
++
++
+ def _load_and_preprocess_data(args, tokenizer, config):
+     data = datasets.load_dataset(
+         args.dataset_name, trust_remote_code=True, cache_dir=args.dataset_cache_root
 ```
