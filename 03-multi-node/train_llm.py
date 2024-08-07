@@ -114,7 +114,7 @@ def main():
         model.load_state_dict(_load_to_device(exp_dir / "model.pt"))
         optimizer.load_state_dict(_load_to_device(exp_dir / "optimizer.pt"))
         lr_scheduler.load_state_dict(_load_to_device(exp_dir / "lr_scheduler.pt"))
-        with open(os.path.join(exp_dir, "state.json")) as fp:
+        with open(exp_dir / "state.json") as fp:
             state = json.load(fp)
         resumed = True
     _LOGGER.info(f"[{rank}] Resumed={resumed} | {state}")

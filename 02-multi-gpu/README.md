@@ -190,7 +190,7 @@ index 66240cc..d17fcb0 100644
      # attempt resume
      state = {
 @@ -90,15 +112,23 @@ def main():
-         with open(os.path.join(exp_dir, "state.json")) as fp:
+         with open(exp_dir / "state.json") as fp:
              state = json.load(fp)
          resumed = True
 +    _LOGGER.info(f"[{rank}] Resumed={resumed} | {state}")

@@ -66,7 +66,7 @@ index e593b16..759c2cc 100644
      resumed = False
 @@ -116,6 +127,10 @@ def main():
          lr_scheduler.load_state_dict(_load_to_device(exp_dir / "lr_scheduler.pt"))
-         with open(os.path.join(exp_dir, "state.json")) as fp:
+         with open(exp_dir / "state.json") as fp:
              state = json.load(fp)
 +            numpy.random.set_state(state["rng"]["np"])
 +            random.setstate(state["rng"]["random"])

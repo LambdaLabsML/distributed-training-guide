@@ -112,12 +112,6 @@ def main():
         "global_step": 0,
         "epoch_step": 0,
         "running_loss": 0,
-        "rng": {
-            "np": numpy.random.get_state(),
-            "random": random.getstate(),
-            "torch": torch.get_rng_state(),
-            "cuda": torch.cuda.get_rng_state_all(),
-        },
     }
 
     resumed = False
@@ -125,12 +119,15 @@ def main():
         model.load_state_dict(_load_to_device(exp_dir / "model.pt"))
         optimizer.load_state_dict(_load_to_device(exp_dir / "optimizer.pt"))
         lr_scheduler.load_state_dict(_load_to_device(exp_dir / "lr_scheduler.pt"))
-        with open(os.path.join(exp_dir, "state.json")) as fp:
+        with open(exp_dir / "state.json") as fp:
             state = json.load(fp)
-            numpy.random.set_state(state["rng"]["np"])
-            random.setstate(state["rng"]["random"])
-            torch.set_rng_state(state["rng"]["torch"])
-            torch.cuda.set_rng_state_all(state["rng"]["cuda"])
+        rng_state = torch.load(
+            exp_dir / "rng.pt", weights_only=False, map_location="cpu"
+        )
+        numpy.random.set_state(rng_state["np"])
+        random.setstate(rng_state["random"])
+        torch.set_rng_state(rng_state["torch"])
+        torch.cuda.set_rng_state(rng_state["cuda"][local_rank], device)
         resumed = True
     _LOGGER.info(f"[{rank}] Resumed={resumed} | {state}")
 
@@ -221,12 +218,17 @@ def main():
                     torch.save(optimizer.state_dict(), exp_dir / "optimizer.pt")
                     torch.save(model.state_dict(), exp_dir / "model.pt")
                     torch.save(lr_scheduler.state_dict(), exp_dir / "lr_scheduler.pt")
-                    state["rng"]["np"] = numpy.random.get_state()
-                    state["rng"]["random"] = random.getstate()
-                    state["rng"]["torch"] = torch.get_rng_state()
-                    state["rng"]["cuda"] = torch.cuda.get_rng_state_all()
                     with open(exp_dir / "state.json", "w") as fp:
                         json.dump(state, fp)
+                    torch.save(
+                        {
+                            "np": numpy.random.get_state(),
+                            "random": random.getstate(),
+                            "torch": torch.get_rng_state(),
+                            "cuda": torch.cuda.get_rng_state_all(),
+                        },
+                        exp_dir / "rng.pt",
+                    )
                 dist.barrier()
 
         state["epoch_step"] = 0
