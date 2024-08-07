@@ -101,7 +101,7 @@ index d17fcb0..e593b16 100644
      }
 +
      resumed = False
-     if exp_dir.exists():
+     if (exp_dir / "model.pt").exists():
          model.load_state_dict(_load_to_device(exp_dir / "model.pt"))
 @@ -116,18 +121,18 @@ def main():
  

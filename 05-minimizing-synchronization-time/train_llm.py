@@ -111,7 +111,7 @@ def main():
     }
 
     resumed = False
-    if exp_dir.exists():
+    if (exp_dir / "model.pt").exists():
         model.load_state_dict(_load_to_device(exp_dir / "model.pt"))
         optimizer.load_state_dict(_load_to_device(exp_dir / "optimizer.pt"))
         lr_scheduler.load_state_dict(_load_to_device(exp_dir / "lr_scheduler.pt"))
