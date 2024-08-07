@@ -147,9 +147,7 @@ def main():
         },
     )
 
-    timers = {
-        k: LocalTimer(device) for k in ["data", "forward", "backward", "update", "lag"]
-    }
+    timers = {k: LocalTimer(device) for k in ["data", "forward", "backward", "update"]}
 
     for state["epoch"] in range(state["epoch"], args.num_epochs):
         _LOGGER.info(
@@ -159,33 +157,20 @@ def main():
         progress_bar = tqdm.tqdm(range(len(dataloader)), disable=rank > 0)
         if state["epoch_step"] > 0:
             progress_bar.update(state["epoch_step"])
-
-        data_iter = iter(dataloader)
-
-        for i_step in range(len(dataloader)):
-            with timers["data"], torch.no_grad():
-                batch = next(data_iter)
-                batch = {k: v.to(device=device) for k, v in batch.items()}
-
+        for i_step, batch in enumerate(dataloader):
             if i_step < state["epoch_step"]:
                 # NOTE: for resuming
                 continue
 
-            with timers["lag"]:
-                dist.barrier()
+            with timers["data"], torch.no_grad():
+                batch = {k: v.to(device=device) for k, v in batch.items()}
 
             with timers["forward"]:
                 outputs = model(**batch)
 
-            with timers["lag"]:
-                dist.barrier()
-
             with timers["backward"]:
                 optimizer.zero_grad()
                 outputs.loss.backward()
-
-            with timers["lag"]:
-                dist.barrier()
 
             with timers["update"]:
                 optimizer.step()

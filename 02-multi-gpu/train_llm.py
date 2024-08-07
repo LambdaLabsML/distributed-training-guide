@@ -141,9 +141,7 @@ def main():
         },
     )
 
-    timers = {
-        k: LocalTimer(device) for k in ["data", "forward", "backward", "update", "lag"]
-    }
+    timers = {k: LocalTimer(device) for k in ["data", "forward", "backward", "update"]}
 
     for state["epoch"] in range(state["epoch"], args.num_epochs):
         _LOGGER.info(
@@ -167,9 +165,6 @@ def main():
             with timers["backward"]:
                 optimizer.zero_grad()
                 outputs.loss.backward()
-
-            with timers["lag"]:
-                dist.barrier()
 
             with timers["update"]:
                 optimizer.step()
