@@ -19,3 +19,7 @@ requires
 ```
 
 ```
+
+## wandb rank 0 vs all ranks
+
+TODO

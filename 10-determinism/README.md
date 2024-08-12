@@ -21,10 +21,10 @@ Notably we are also saving & restoring the rng states from various libraries, an
 ## Code Changes
 
 ```diff
-diff --git a/03-multi-node/train_llm.py b/09-determinism/train_llm.py
+diff --git a/03-multi-node/train_llm.py b/10-determinism/train_llm.py
 index 24eacbd..0a3a029 100644
 --- a/03-multi-node/train_llm.py
-+++ b/09-determinism/train_llm.py
++++ b/10-determinism/train_llm.py
 @@ -40,6 +40,7 @@ def main():
  
      torch.set_num_threads(1)
