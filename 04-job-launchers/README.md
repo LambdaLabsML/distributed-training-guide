@@ -1,12 +1,10 @@
 # Job Launchers
 
-## mpirun
-
-## slurm
-
-## kubernetes
+Since it is quite cumbersome to manually SSH into every node and start a training job, there are various ways to launch distributed training jobs from a single node.
 
 ## deepspeed
+
+deepspeed is a distributed training library with many optimizations. We go into some of these optimizations in more detail in later chapters, but here we can just use the launcher included with it.
 
 **NOTE: you do not have to integrate deepspeed into your training code to use the deepspeed launcher.**
 
@@ -37,18 +35,11 @@ index ae1c66f..d5671b3 100644
      return parser
 ```
 
-3. Add a `hostfile` containing ip addresses of nodes to use like so:
-
-```
-<ip of node 1> slots=8
-<ip of node 2> slots=8
-```
-
 4. Launch
 
 ```bash
 TORCHELASTIC_ERROR_FILE=./error.json OMP_NUM_THREADS=1 deepspeed \
-    --hostfile hostfile \
+    --include <ip of node 1>@<ip of node 2> \
     train_llm.py \
     --experiment-name deepspeed-multi-node \
     --dataset-name Skylion007/openwebtext \
@@ -56,6 +47,24 @@ TORCHELASTIC_ERROR_FILE=./error.json OMP_NUM_THREADS=1 deepspeed \
     --batch-size 64
 ```
 
+## slurm
+
+slurm is a very popular job scheduling software often used with clusters.
+
+Submit the training job using the provided `job.slurm` script:
+
+```bash
+sbatch --nnodes 2 --gpus 16 --cpus-per-task 8 -w <hostname 1>,...,<hostname n> job.slurm
+```
+
 ## colossalai
 
 TODO can you do this without integrating??
+
+## kubernetes
+
+TODO
+
+## mpirun
+
+TODO
