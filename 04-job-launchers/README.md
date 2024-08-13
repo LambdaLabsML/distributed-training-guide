@@ -57,6 +57,10 @@ Submit the training job using the provided `job.slurm` script:
 sbatch --nnodes 2 --gpus 16 --cpus-per-task 8 -w <hostname 1>,...,<hostname n> job.slurm
 ```
 
+By default slurm assigns 1 task per node, which is great for us because we will invoke torchrun once per node.
+
+The command above requests a total of 16 gpus from 2 nodes total.
+
 ## colossalai
 
 TODO can you do this without integrating??
