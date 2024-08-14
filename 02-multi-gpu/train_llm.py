@@ -120,14 +120,14 @@ def main():
         exp_dir.mkdir(parents=True, exist_ok=True)
     dist.barrier()
 
-    (exp_dir / f"gpu-{rank}").mkdir(parents=True, exist_ok=True)
-    _LOGGER.info(f"[{rank}] Worker saving to {exp_dir / f'gpu-{rank}'}")
+    (exp_dir / f"rank-{rank}").mkdir(parents=True, exist_ok=True)
+    _LOGGER.info(f"[{rank}] Worker saving to {exp_dir / f'rank-{rank}'}")
 
     wandb.init(
         project="distributed-training-tutorials",
-        dir=exp_dir / f"gpu-{rank}",
+        dir=exp_dir / f"rank-{rank}",
         group=args.experiment_name,
-        name=args.experiment_name + "/" + f"gpu-{rank}",
+        name=f"rank-{rank}",
         id=f"{args.experiment_name}-{rank}",
         resume="must" if resumed else None,
         save_code=True,
@@ -151,13 +151,17 @@ def main():
         progress_bar = tqdm.tqdm(range(len(dataloader)), disable=rank > 0)
         if state["epoch_step"] > 0:
             progress_bar.update(state["epoch_step"])
-        for i_step, batch in enumerate(dataloader):
+
+        batches = iter(dataloader)
+
+        for i_step in range(len(dataloader)):
+            with timers["data"], torch.no_grad():
+                batch = next(batches)
+                batch = {k: v.to(device=device) for k, v in batch.items()}
+
             if i_step < state["epoch_step"]:
                 # NOTE: for resuming
                 continue
-
-            with timers["data"], torch.no_grad():
-                batch = {k: v.to(device=device) for k, v in batch.items()}
 
             with timers["forward"]:
                 outputs = model(**batch)

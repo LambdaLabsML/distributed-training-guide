@@ -17,9 +17,9 @@ srun torchrun \
     --nnodes ${SLURM_NNODES} \
     --nproc-per-node ${SLURM_GPUS_ON_NODE} \
     --redirects 3 \
-    --log-dir ${SLURM_SUBMIT_DIR} \
+    --log-dir ${SLURM_SUBMIT_DIR}/logs \
     train_llm.py \
-    --experiment-name slurm-multi-node \
+    --experiment-name gpt2-openwebtext-slurm-$(date +%Y-%m-%dT%H-%M-%S) \
     --dataset-name Skylion007/openwebtext \
     --model-name openai-community/gpt2 \
     --batch-size 64

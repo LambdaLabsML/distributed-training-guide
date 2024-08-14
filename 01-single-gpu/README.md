@@ -6,7 +6,7 @@ This is the "standard" single gpu training script. It doesn't do anything with d
 
 ```bash
 python train_llm.py \
-    --experiment-name gpt2-openwebtext-single-gpu \
+    --experiment-name gpt2-openwebtext-single-gpu-$(date +%Y-%m-%dT%H-%M-%S) \
     --dataset-name Skylion007/openwebtext \
     --model-name openai-community/gpt2 \
     --batch-size 64

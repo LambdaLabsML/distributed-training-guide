@@ -12,7 +12,7 @@ TORCHELASTIC_ERROR_FILE=./error.json OMP_NUM_THREADS=1 torchrun \
     --redirects 3 \
     --log-dir ./logs \
     train_llm.py \
-    --experiment-name multi-node \
+    --experiment-name gpt2-openwebtext-multi-node-$(date +%Y-%m-%dT%H-%M-%S) \
     --dataset-name Skylion007/openwebtext \
     --model-name openai-community/gpt2 \
     --batch-size 64
@@ -20,9 +20,7 @@ TORCHELASTIC_ERROR_FILE=./error.json OMP_NUM_THREADS=1 torchrun \
 
 Assumes:
 1. You are using the same enviroment on both machines
-2. T
-3. You are logged into wandb on both machines
-
+2. You are logged into wandb on both machines
 
 ## How Multi Node works
 
@@ -36,27 +34,14 @@ Error reporting/handling becomes extremely important with more than 1 node. Netw
 
 tl;dr: When going from single to multi node, ensuring environments are the same is the most important thing.
 
-## Machine Setup
-
-### Ensuring Environments are the same
-
-### Ensuring System Dates & Times are the same
-
-## Troubleshooting
-
-How to set up your code/logging to make it easy to identify the cause?
-
-### Networking Issues
-
-### GPU Issues
-
-### Hanging/Timeout issues
-
 ## Code Diff
 
-```diff
-diff --git a/02-multi-gpu/train_llm.py b/03-multi-node/train_llm.py
-index d17fcb0..e593b16 100644
+Not much has to change code wise. The main thing is how your data is stored/organized.
+
+If your workers operate on shared network space, then only `rank==0` should be writing to it. Otherwise you may want `local_rank==0` writing, so each node is collecting results.
+
+```diff --git a/02-multi-gpu/train_llm.py b/03-multi-node/train_llm.py
+index 3130381..d5cb05c 100644
 --- a/02-multi-gpu/train_llm.py
 +++ b/03-multi-node/train_llm.py
 @@ -49,12 +49,12 @@ def main():
@@ -89,47 +74,15 @@ index d17fcb0..e593b16 100644
      if rank == 0:
          train_data = _load_and_preprocess_data(args, tokenizer, config)
      dist.barrier()
-@@ -85,6 +88,7 @@ def main():
-         train_data,
-         batch_size=args.batch_size,
-         collate_fn=default_data_collator,
-+        num_workers=1,
-         # NOTE: this sampler will split dataset evenly across workers
-         sampler=DistributedSampler(train_data, shuffle=True, drop_last=True),
-     )
-@@ -104,6 +108,7 @@ def main():
-         "epoch_step": 0,
-         "running_loss": 0,
-     }
-+
-     resumed = False
-     if (exp_dir / "model.pt").exists():
-         model.load_state_dict(_load_to_device(exp_dir / "model.pt"))
-@@ -116,18 +121,18 @@ def main():
+@@ -116,6 +119,7 @@ def main():
  
      dist.barrier()
      if rank == 0:
--        _LOGGER.info(f"Creating experiment root directory")
 +        # NOTE: assuming directory is shared across all nodes, that's why we do rank instead of local_rank
+         _LOGGER.info(f"Creating experiment root directory")
          exp_dir.mkdir(parents=True, exist_ok=True)
      dist.barrier()
- 
--    (exp_dir / f"gpu-{rank}").mkdir(parents=True, exist_ok=True)
--    _LOGGER.info(f"[{rank}] Worker saving to {exp_dir / f'gpu-{rank}'}")
-+    (exp_dir / f"rank-{rank}").mkdir(parents=True, exist_ok=True)
-+    _LOGGER.info(f"[{rank}] Worker saving to {exp_dir / f'rank-{rank}'}")
- 
-     wandb.init(
-         project="distributed-training-tutorials",
--        dir=exp_dir / f"gpu-{rank}",
-+        dir=exp_dir / f"rank-{rank}",
-         group=args.experiment_name,
--        name=args.experiment_name + "/" + f"gpu-{rank}",
-+        name=f"rank-{rank}",
-         id=f"{args.experiment_name}-{rank}",
-         resume="must" if resumed else None,
-         save_code=True,
-@@ -137,6 +142,7 @@ def main():
+@@ -137,6 +141,7 @@ def main():
              "training_data_size": len(train_data),
              "num_batches": len(dataloader),
              "rank": rank,

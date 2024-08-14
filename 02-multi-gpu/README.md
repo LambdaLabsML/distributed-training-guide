@@ -7,7 +7,7 @@ TORCHELASTIC_ERROR_FILE=./error.json OMP_NUM_THREADS=1 torchrun --standalone \
     --redirects 3 \
     --log-dir ./logs \
     train_llm.py \
-    --experiment-name gpt2-openwebtext-A100 \
+    --experiment-name gpt2-openwebtext-multi-gpu-$(date +%Y-%m-%dT%H-%M-%S) \
     --dataset-name Skylion007/openwebtext \
     --model-name openai-community/gpt2 \
     --batch-size 64

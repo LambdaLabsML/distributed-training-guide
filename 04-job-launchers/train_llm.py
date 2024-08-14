@@ -160,13 +160,17 @@ def main():
         progress_bar = tqdm.tqdm(range(len(dataloader)), disable=rank > 0)
         if state["epoch_step"] > 0:
             progress_bar.update(state["epoch_step"])
-        for i_step, batch in enumerate(dataloader):
+
+        batches = iter(dataloader)
+
+        for i_step in range(len(dataloader)):
+            with timers["data"], torch.no_grad():
+                batch = next(batches)
+                batch = {k: v.to(device=device) for k, v in batch.items()}
+
             if i_step < state["epoch_step"]:
                 # NOTE: for resuming
                 continue
-
-            with timers["data"], torch.no_grad():
-                batch = {k: v.to(device=device) for k, v in batch.items()}
 
             with timers["forward"]:
                 outputs = model(**batch)

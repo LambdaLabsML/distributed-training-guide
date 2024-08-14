@@ -88,7 +88,6 @@ def main():
         train_data,
         batch_size=args.batch_size,
         collate_fn=default_data_collator,
-        num_workers=1,
         # NOTE: this sampler will split dataset evenly across workers
         sampler=DistributedSampler(train_data, shuffle=True, drop_last=True),
     )
@@ -108,7 +107,6 @@ def main():
         "epoch_step": 0,
         "running_loss": 0,
     }
-
     resumed = False
     if (exp_dir / "model.pt").exists():
         model.load_state_dict(_load_to_device(exp_dir / "model.pt"))
@@ -122,6 +120,7 @@ def main():
     dist.barrier()
     if rank == 0:
         # NOTE: assuming directory is shared across all nodes, that's why we do rank instead of local_rank
+        _LOGGER.info(f"Creating experiment root directory")
         exp_dir.mkdir(parents=True, exist_ok=True)
     dist.barrier()
 
@@ -157,13 +156,17 @@ def main():
         progress_bar = tqdm.tqdm(range(len(dataloader)), disable=rank > 0)
         if state["epoch_step"] > 0:
             progress_bar.update(state["epoch_step"])
-        for i_step, batch in enumerate(dataloader):
+
+        batches = iter(dataloader)
+
+        for i_step in range(len(dataloader)):
+            with timers["data"], torch.no_grad():
+                batch = next(batches)
+                batch = {k: v.to(device=device) for k, v in batch.items()}
+
             if i_step < state["epoch_step"]:
                 # NOTE: for resuming
                 continue
-
-            with timers["data"], torch.no_grad():
-                batch = {k: v.to(device=device) for k, v in batch.items()}
 
             with timers["forward"]:
                 outputs = model(**batch)

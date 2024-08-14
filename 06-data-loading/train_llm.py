@@ -109,7 +109,6 @@ def main():
         "epoch_step": 0,
         "running_loss": 0,
     }
-
     resumed = False
     if (exp_dir / "model.pt").exists():
         model.load_state_dict(_load_to_device(exp_dir / "model.pt"))
@@ -123,6 +122,7 @@ def main():
     dist.barrier()
     if rank == 0:
         # NOTE: assuming directory is shared across all nodes, that's why we do rank instead of local_rank
+        _LOGGER.info(f"Creating experiment root directory")
         exp_dir.mkdir(parents=True, exist_ok=True)
     dist.barrier()
 
@@ -162,11 +162,11 @@ def main():
         if state["epoch_step"] > 0:
             progress_bar.update(state["epoch_step"])
 
-        batch_iter = iter(dataloader)
+        batches = iter(dataloader)
 
         for i_step in range(len(dataloader)):
             with timers["data"], torch.no_grad():
-                batch = next(batch_iter)
+                batch = next(batches)
                 batch = {k: v.to(device=device) for k, v in batch.items()}
 
             if i_step < state["epoch_step"]:
