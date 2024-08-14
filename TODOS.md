@@ -7,3 +7,4 @@
 - add config/tokenizer to output directory
 - add note about where dataset preprocessing is from
 - add note about dataset choice from https://huggingface.co/datasets?task_categories=task_categories:text-generation&sort=downloads
+- add info about py-spy for diagnosing hanging

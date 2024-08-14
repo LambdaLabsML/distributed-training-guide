@@ -1,18 +1,25 @@
-# Distributed Training Tutorials
+# Distributed Training Guide
 
-While there are many tutorials on how to do distributed training, there aren't any that compare and contrast the different approaches (e.g. torchrun, deepspeed, colossalai, etc).
+This guide aims at a comprehensive guide on how to do distributed training, diagnose errors, and fully utilize all resources available.
 
-Additionally, there is generally a lack of information on how any dependencies should be modified for use in distributed settings (e.g. wandb). This makes sense, because pytorch isn't really going to document how to best log things with wandb when using torchrun, and no one really thinks to check wandb documentation when thinking about distributed training.
+Questions this guide answers:
 
-Handling faults (software related issues, network issues, hardware, etc) during distributed training is a huge issue, and most tutorials don't go into best practices for how to identify what went wrong and how to fix it. This leads to huge wastes in resources unless you know all the best practices beforehand.
+1. How do I update a single gpu training/fine tuning script to run on multiple GPUs or multiple nodes?
+    a. See chapters 2 & 3
+2. How do I diagnose hanging/errors that happen during training?
+    a. See chapter 2
+3. My model/optimizer is too big for a single gpu - how do I train/fine tune it on my cluster?
+    a. See chapter 9 & 10
+4. How do I schedule/launch training on a cluster?
+    a. See chapter 4
+5. How do I scale my hyperparameters when increasing the number of workers?
+    a. See Chapters 5, 6, & 7
 
-This tutorial is aimed at showing a realistic training setup and how it differs depending on the library used.
+Best practices for logging stdout/stderr and wandb are also included, as logging is vitally important in diagnosing/debugging training runs on a cluster.
 
 ## Organization
 
-Read through each of the READMEs in the subdirectories in order (starting with 01-single-gpu). Each readme will contain an overview of the differences between the last version.
-
-There is a `train_llm.py` script in each directory which contains the training code for that setting.
+This guide is organized into sequential chapters, each with a `README.md` and a `train_llm.py` script in them. The readme will discuss the changes introduced in that chapter, and go into more details.
 
 **Each of the training scripts is aimed at training a causal language model (i.e. gpt).**
 
