@@ -54,7 +54,7 @@ if (exp_dir / "model.pt").exists():
     resumed = True
 ```
 
-4. We resume the run in wandb if we loaded a checkpoint
+4. We resume the run in wandb if we loaded a checkpoint (& also ensure that our unique experiment ID is used for the wandb run id)
 
 ```diff
 wandb.init(

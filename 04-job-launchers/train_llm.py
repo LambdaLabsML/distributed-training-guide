@@ -3,7 +3,6 @@ from itertools import chain
 import json
 import multiprocessing
 import random
-import os
 import time
 from pathlib import Path
 import logging
@@ -37,9 +36,6 @@ def main():
     args = parser.parse_args()
 
     _LOGGER.info(args)
-
-    torch.set_num_threads(1)
-    torch.set_num_interop_threads(1)
 
     torch.manual_seed(args.seed)
     torch.cuda.manual_seed_all(args.seed)
