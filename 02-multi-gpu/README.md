@@ -4,6 +4,8 @@
 TORCHELASTIC_ERROR_FILE=./error.json OMP_NUM_THREADS=1 torchrun --standalone \
     --nnodes 1 \
     --nproc-per-node gpu \
+    --redirects 3 \
+    --log-dir ./logs \
     train_llm.py \
     --experiment-name gpt2-openwebtext-A100 \
     --dataset-name Skylion007/openwebtext \

@@ -40,6 +40,7 @@ index ae1c66f..d5671b3 100644
 ```bash
 TORCHELASTIC_ERROR_FILE=./error.json OMP_NUM_THREADS=1 deepspeed \
     --include <ip of node 1>@<ip of node 2> \
+    --enable_each_rank_log ./logs \
     train_llm.py \
     --experiment-name deepspeed-multi-node \
     --dataset-name Skylion007/openwebtext \
@@ -54,7 +55,7 @@ slurm is a very popular job scheduling software often used with clusters.
 Submit the training job using the provided `job.slurm` script:
 
 ```bash
-sbatch --nnodes 2 --gpus 16 --cpus-per-task 8 -w <hostname 1>,...,<hostname n> job.slurm
+sbatch --nnodes 2 --gpus 16 --cpus-per-task 8 job.slurm
 ```
 
 By default slurm assigns 1 task per node, which is great for us because we will invoke torchrun once per node.
