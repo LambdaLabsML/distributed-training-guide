@@ -3,7 +3,6 @@ from itertools import chain
 import json
 import multiprocessing
 import random
-import os
 import time
 from pathlib import Path
 import logging
@@ -117,6 +116,7 @@ def main():
         progress_bar = tqdm.tqdm(range(len(dataloader)))
         if state["epoch_step"] > 0:
             progress_bar.update(state["epoch_step"])
+
         for i_step, batch in enumerate(dataloader):
             if i_step < state["epoch_step"]:
                 # NOTE: for resuming

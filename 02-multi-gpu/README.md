@@ -45,7 +45,7 @@ So how does pytorch achieve this?
 
 In our normal training script we use a `torch.utils.data.DataLoader` to batch our data. One of the arguments to DataLoader is a `sampler`, which basically samples items from the dataset when constructing the batches. You can think of the sampler as doing:
 
-```
+```python
 # simplified Sampler
 worker_len = len(dataset)
 random.choice(range(worker_len))
@@ -53,7 +53,7 @@ random.choice(range(worker_len))
 
 The clever thing that the DistributedSampler does is it partitions the length of the dataset across each of our workers. You don't even have to partition the actual dataset - it just chooses the integers that it returns from a specific subset of the dataset:
 
-```
+```python
 # simplified DistributedSampler
 worker_len = len(dataset) // world_size
 rank * worker_len + random.choice(range(worker_len))
