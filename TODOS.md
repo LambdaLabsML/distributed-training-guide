@@ -2,7 +2,6 @@
 - discuss gradient accumulation
 - add fault tolerance to examples
 - deepspeed section discussion optimization
-- add code diffs to all the readmes
 - add nccl/power draw/etc metric diagnoses
 - add config/tokenizer to output directory
 - add note about where dataset preprocessing is from

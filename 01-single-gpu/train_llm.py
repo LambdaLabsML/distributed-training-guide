@@ -94,7 +94,7 @@ def main():
     exp_dir.mkdir(parents=True, exist_ok=True)
 
     wandb.init(
-        project="distributed-training-tutorials",
+        project="distributed-training-guide",
         dir=exp_dir,
         name=args.experiment_name,
         id=args.experiment_name,

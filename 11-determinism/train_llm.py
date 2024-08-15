@@ -138,7 +138,7 @@ def main():
     _LOGGER.info(f"[{rank}] Worker saving to {exp_dir / f'rank-{rank}'}")
 
     wandb.init(
-        project="distributed-training-tutorials",
+        project="distributed-training-guide",
         dir=exp_dir / f"rank-{rank}",
         group=args.experiment_name,
         name=f"rank-{rank}",

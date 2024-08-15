@@ -233,7 +233,7 @@ A few other notes:
 --- a/01-single-gpu/train_llm.py
 +++ b/02-multi-gpu/train_llm.py
 wandb.init(
-         project="distributed-training-tutorials",
+         project="distributed-training-guide",
 +        group=args.experiment_name,
 -        dir=exp_dir,
 +        dir=exp_dir / f"rank-{rank}",
