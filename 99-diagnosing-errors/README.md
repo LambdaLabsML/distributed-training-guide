@@ -9,3 +9,7 @@
 ## System metrics to watch for
 
 1. GPU Power Usage
+
+## Model metrics to watch for
+
+1. Weight norm (diverging)
