@@ -2,33 +2,33 @@
 
 This guide aims at a comprehensive guide on best practices for distributed training, diagnosing errors, and fully utilize all resources available.
 
-Questions this guide answers:
+## Questions this guide answers:
 
-> How do I update a single gpu training/fine tuning script to run on multiple GPUs or multiple nodes?
+#### How do I update a single gpu training/fine tuning script to run on multiple GPUs or multiple nodes?
 
 *See chapters 2 & 3*
 
-> How do I diagnose hanging/errors that happen during training?
+#### How do I diagnose hanging/errors that happen during training?
 
 *See chapter 2*
 
-> My model/optimizer is too big for a single gpu - how do I train/fine tune it on my cluster?
+#### My model/optimizer is too big for a single gpu - how do I train/fine tune it on my cluster?
 
-*See chapters 9 & 10*
+*See chapters 7 & 8*
 
-> How do I schedule/launch training on a cluster?
+#### How do I schedule/launch training on a cluster?
 
 *See chapter 4*
 
-> How do I scale my hyperparameters when increasing the number of workers?
+#### How do I scale my hyperparameters when increasing the number of workers?
 
-*See Chapters 5, 6, & 7*
+*See Chapters 5 & 6*
 
 ---
 
 Best practices for logging stdout/stderr and wandb are also included, as logging is vitally important in diagnosing/debugging training runs on a cluster.
 
-## Organization
+## How to read
 
 This guide is organized into sequential chapters, each with a `README.md` and a `train_llm.py` script in them. The readme will discuss the changes introduced in that chapter, and go into more details.
 
