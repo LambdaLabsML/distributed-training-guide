@@ -20,7 +20,7 @@ If you want exact training dynamics, you have to also scale the learning rate. H
 
 As of writing this, the most common rules that people use to scale learning rate are:
 
-1. Linear scaling rule:
+### Linear scaling rule
 
 ```python
 lr = args.lr * dist.get_world_size()
@@ -33,7 +33,7 @@ NOTE: **Be careful when using this for optimizers other than SGD**
 References:
 - [Accurate, Large Minibatch SGD: Training ImageNet in 1 Hour](https://arxiv.org/pdf/1706.02677)
 
-2. Square root scaling rule:
+### Square root scaling rule
 
 ```python
 lr = args.lr * numpy.sqrt(dist.get_world_size())
