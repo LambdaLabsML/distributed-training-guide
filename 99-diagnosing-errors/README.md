@@ -10,6 +10,8 @@
 
 1. GPU Power Usage
 
-## Model metrics to watch for
+## Things to check
 
-1. Weight norm (diverging)
+1. system date time on each system
+2. nccl benchmark
+3. open file descriptor limit
