@@ -6,6 +6,14 @@ An important part of achieving high throughput during distributed training is en
 
 If one process is much faster, it will spend a lot of time waiting for the other processes to catch up.
 
+## Motivating Example
+
+While writing this guide, I noticed a drop in GPU utilization across all nodes when moving from single node to multi node. When training single node, the GPU power draw was at 80%, and when I went to multi node, it dropped to 60% across all nodes.
+
+It turns out data loading was consistently slower on one node, causing all nodes to wait for it to catch up!
+
+In this case, since data loading is relatively fast, simply updating the number of workers and the prefetch factor fixed it. In more complex examples, other optimizations or preprocessing may be needed.
+
 ## Measuring wait time
 
 We can measure this phenomena by adding some explicit `dist.barrier()` calls in our code with our timing wrapped around it:
