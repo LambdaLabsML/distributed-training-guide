@@ -6,9 +6,7 @@ As you scale up the number of nodes, the effective batch size (the amount of ite
 effective_batch_size = batch_size * world_size
 ```
 
-This directly impacts the dynamics of how your model learns and changes.
-
-Batch size also interacts with the learning rate of the model.
+As you may know, increasing the batch size means that the variance of the data that your model is training on decreases, meaning your gradients will be much smoother. This directly impacts the dynamics of how your model learns and changes!
 
 If you want to **exactly match the dynamics of single gpu training** when moving to multi node training, this chapter is aimed at you!
 

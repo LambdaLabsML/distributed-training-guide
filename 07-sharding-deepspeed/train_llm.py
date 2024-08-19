@@ -61,9 +61,10 @@ def main():
     torch.cuda.set_device(device)
 
     config = AutoConfig.from_pretrained(args.model_name, trust_remote_code=True)
-    model = AutoModelForCausalLM.from_config(config, trust_remote_code=True).to(
-        dtype=dtype, device=device
-    )
+    with deepspeed.zero.Init():
+        model = AutoModelForCausalLM.from_config(config, trust_remote_code=True).to(
+            dtype=dtype, device=device
+        )
     tokenizer = AutoTokenizer.from_pretrained(args.model_name, trust_remote_code=True)
 
     embedding_size = model.get_input_embeddings().weight.shape[0]
