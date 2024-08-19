@@ -14,6 +14,7 @@ from torch.nn.parallel import DistributedDataParallel
 from torch import distributed as dist
 from torch.distributed.elastic.multiprocessing.errors import record
 
+import deepspeed
 import numpy
 import wandb
 import tqdm
@@ -37,17 +38,20 @@ def main():
 
     _LOGGER.info(args)
 
-    torch.use_deterministic_algorithms(True)
-
     torch.manual_seed(args.seed)
     torch.cuda.manual_seed_all(args.seed)
     numpy.random.seed(args.seed)
     random.seed(args.seed)
 
-    dist.init_process_group(backend="nccl" if dist.is_nccl_available() else "mpi")
+    deepspeed.init_distributed(
+        dist_backend="nccl" if dist.is_nccl_available() else "mpi"
+    )
 
     rank = dist.get_rank()
-    local_rank = rank % torch.cuda.device_count()
+    if args.local_rank is not None:
+        local_rank = args.local_rank
+    else:
+        local_rank = rank % torch.cuda.device_count()
     world_size = dist.get_world_size()
 
     _LOGGER.info(f"local rank={local_rank} rank={rank} world size={world_size}")
@@ -82,23 +86,20 @@ def main():
         train_data = _load_and_preprocess_data(args, tokenizer, config)
     _LOGGER.info(f"[{rank}] {len(train_data)} training samples")
 
-    g = torch.Generator()
-    g.manual_seed(args.seed)
     dataloader = DataLoader(
         train_data,
         batch_size=args.batch_size,
         collate_fn=default_data_collator,
-        num_workers=1,
         # NOTE: this sampler will split dataset evenly across workers
         sampler=DistributedSampler(train_data, shuffle=True, drop_last=True),
-        worker_init_fn=_seed_worker,
-        generator=g,
     )
     _LOGGER.info(f"[{rank}] {len(dataloader)} batches per epoch")
 
-    optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr)
-    lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-        optimizer, T_max=1000, eta_min=args.lr * 1e-2
+    model_engine: deepspeed.DeepSpeedEngine
+    model_engine, _, _, lr_scheduler = deepspeed.initialize(
+        args,
+        model=model,
+        model_parameters=(p for p in model.parameters() if p.requires_grad),
     )
 
     exp_dir: Path = Path(args.save_dir) / args.experiment_name
@@ -110,27 +111,16 @@ def main():
         "epoch_step": 0,
         "running_loss": 0,
     }
-
     resumed = False
-    if (exp_dir / "model.pt").exists():
-        model.load_state_dict(_load_to_device(exp_dir / "model.pt"))
-        optimizer.load_state_dict(_load_to_device(exp_dir / "optimizer.pt"))
-        lr_scheduler.load_state_dict(_load_to_device(exp_dir / "lr_scheduler.pt"))
-        with open(exp_dir / "state.json") as fp:
-            state = json.load(fp)
-        rng_state = torch.load(
-            exp_dir / "rng.pt", weights_only=False, map_location="cpu"
-        )
-        numpy.random.set_state(rng_state["np"])
-        random.setstate(rng_state["random"])
-        torch.set_rng_state(rng_state["torch"])
-        torch.cuda.set_rng_state(rng_state["cuda"][local_rank], device)
-        resumed = True
+    if (exp_dir / "pytorch_model.bin").exists():
+        load_path, state = model_engine.load_checkpoint(exp_dir)
+        resumed = load_path is not None
     _LOGGER.info(f"[{rank}] Resumed={resumed} | {state}")
 
     dist.barrier()
     if rank == 0:
         # NOTE: assuming directory is shared across all nodes, that's why we do rank instead of local_rank
+        _LOGGER.info(f"Creating experiment root directory")
         exp_dir.mkdir(parents=True, exist_ok=True)
     dist.barrier()
 
@@ -179,15 +169,13 @@ def main():
                 continue
 
             with timers["forward"]:
-                outputs = model(**batch)
+                outputs = model_engine(**batch)
 
             with timers["backward"]:
-                optimizer.zero_grad()
-                outputs.loss.backward()
+                model_engine.backward(outputs.loss)
 
             with timers["update"]:
-                optimizer.step()
-                lr_scheduler.step()
+                model_engine.step()
 
             state["global_step"] += 1
             state["epoch_step"] += 1
@@ -215,30 +203,10 @@ def main():
                     t.reset()
 
             if state["global_step"] % args.ckpt_freq == 0:
-                if rank == 0:
-                    torch.save(optimizer.state_dict(), exp_dir / "optimizer.pt")
-                    torch.save(model.state_dict(), exp_dir / "model.pt")
-                    torch.save(lr_scheduler.state_dict(), exp_dir / "lr_scheduler.pt")
-                    with open(exp_dir / "state.json", "w") as fp:
-                        json.dump(state, fp)
-                    torch.save(
-                        {
-                            "np": numpy.random.get_state(),
-                            "random": random.getstate(),
-                            "torch": torch.get_rng_state(),
-                            "cuda": torch.cuda.get_rng_state_all(),
-                        },
-                        exp_dir / "rng.pt",
-                    )
+                model_engine.save_checkpoint(exp_dir, client_state=state)
                 dist.barrier()
 
         state["epoch_step"] = 0
-
-
-def _seed_worker(worker_id):
-    worker_seed = torch.initial_seed() % 2**32
-    numpy.random.seed(worker_seed)
-    random.seed(worker_seed)
 
 
 def _load_and_preprocess_data(args, tokenizer, config):
@@ -334,6 +302,8 @@ def _get_parser() -> argparse.ArgumentParser:
     parser.add_argument("--log-freq", default=100, type=int)
     parser.add_argument("--ckpt-freq", default=500, type=int)
     parser.add_argument("--dataset-cache-root", default="../.cache")
+    parser.add_argument("--local_rank", type=int, default=None)
+    deepspeed.add_config_arguments(parser)
     return parser
 
 

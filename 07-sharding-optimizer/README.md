@@ -1,5 +1,0 @@
-# 
-
-## DeepSpeed ZeRO
-
-## ColossalAI

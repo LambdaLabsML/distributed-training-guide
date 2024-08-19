@@ -325,7 +325,4 @@ def _get_parser() -> argparse.ArgumentParser:
 
 
 if __name__ == "__main__":
-    try:
-        main()
-    finally:
-        dist.destroy_process_group()
+    main()

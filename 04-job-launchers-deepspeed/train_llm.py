@@ -87,7 +87,6 @@ def main():
         train_data,
         batch_size=args.batch_size,
         collate_fn=default_data_collator,
-        num_workers=1,
         # NOTE: this sampler will split dataset evenly across workers
         sampler=DistributedSampler(train_data, shuffle=True, drop_last=True),
     )
@@ -107,7 +106,6 @@ def main():
         "epoch_step": 0,
         "running_loss": 0,
     }
-
     resumed = False
     if (exp_dir / "model.pt").exists():
         model.load_state_dict(_load_to_device(exp_dir / "model.pt"))
@@ -121,24 +119,31 @@ def main():
     dist.barrier()
     if rank == 0:
         # NOTE: assuming directory is shared across all nodes, that's why we do rank instead of local_rank
+        _LOGGER.info(f"Creating experiment root directory")
         exp_dir.mkdir(parents=True, exist_ok=True)
-
-        wandb.init(
-            project="distributed-training-guide",
-            dir=exp_dir,
-            name=args.experiment_name,
-            id=args.experiment_name,
-            resume="must" if resumed else None,
-            save_code=True,
-            config={
-                "args": vars(args),
-                "embedding_size": len(tokenizer),
-                "training_data_size": len(train_data),
-                "num_batches": len(dataloader),
-                "world_size": world_size,
-            },
-        )
     dist.barrier()
+
+    (exp_dir / f"rank-{rank}").mkdir(parents=True, exist_ok=True)
+    _LOGGER.info(f"[{rank}] Worker saving to {exp_dir / f'rank-{rank}'}")
+
+    wandb.init(
+        project="distributed-training-guide",
+        dir=exp_dir / f"rank-{rank}",
+        group=args.experiment_name,
+        name=f"rank-{rank}",
+        id=f"{args.experiment_name}-{rank}",
+        resume="must" if resumed else None,
+        save_code=True,
+        config={
+            "args": vars(args),
+            "embedding_size": len(tokenizer),
+            "training_data_size": len(train_data),
+            "num_batches": len(dataloader),
+            "rank": rank,
+            "local_rank": local_rank,
+            "world_size": world_size,
+        },
+    )
 
     timers = {k: LocalTimer(device) for k in ["data", "forward", "backward", "update"]}
 
@@ -179,22 +184,21 @@ def main():
             progress_bar.update(1)
 
             if state["global_step"] % args.log_freq == 0:
-                info = {
-                    "lr": lr_scheduler.get_last_lr()[0],
-                    "running_loss": state["running_loss"] / args.log_freq,
-                    "epoch": state["epoch"],
-                    "epoch_progress": state["epoch_step"] / len(dataloader),
-                    "num_batches_remaining": len(dataloader) - i_step,
-                    "time/total": sum(t.avg_elapsed_ms() for t in timers.values()),
-                    **{
-                        f"time/{k}": timer.avg_elapsed_ms()
-                        for k, timer in timers.items()
+                wandb.log(
+                    {
+                        "lr": lr_scheduler.get_last_lr()[0],
+                        "running_loss": state["running_loss"] / args.log_freq,
+                        "epoch": state["epoch"],
+                        "epoch_progress": state["epoch_step"] / len(dataloader),
+                        "num_batches_remaining": len(dataloader) - i_step,
+                        "time/total": sum(t.avg_elapsed_ms() for t in timers.values()),
+                        **{
+                            f"time/{k}": timer.avg_elapsed_ms()
+                            for k, timer in timers.items()
+                        },
                     },
-                }
-                if rank == 0:
-                    wandb.log(info, step=state["global_step"])
-                else:
-                    _LOGGER.info(f"[{rank}] step={state['global_step']} {info}")
+                    step=state["global_step"],
+                )
                 state["running_loss"] = 0
                 for t in timers.values():
                     t.reset()
@@ -309,7 +313,4 @@ def _get_parser() -> argparse.ArgumentParser:
 
 
 if __name__ == "__main__":
-    try:
-        main()
-    finally:
-        dist.destroy_process_group()
+    main()
