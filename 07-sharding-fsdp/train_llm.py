@@ -13,6 +13,20 @@ from torch.utils.data.distributed import DistributedSampler
 from torch.nn.parallel import DistributedDataParallel
 from torch import distributed as dist
 from torch.distributed.elastic.multiprocessing.errors import record
+from torch.distributed.fsdp.fully_sharded_data_parallel import (
+    FullyShardedDataParallel,
+    BackwardPrefetch,
+    CPUOffload,
+    ShardingStrategy,
+    StateDictType,
+    StateDictConfig,
+    OptimStateDictConfig,
+)
+from torch.distributed.fsdp.wrap import (
+    size_based_auto_wrap_policy,
+    enable_wrap,
+    wrap,
+)
 
 import numpy
 import wandb
@@ -67,8 +81,22 @@ def main():
     if len(tokenizer) > embedding_size:
         model.resize_token_embeddings(len(tokenizer))
 
-    model = DistributedDataParallel(
-        model, device_ids=[local_rank], output_device=local_rank
+    model = FullyShardedDataParallel(
+        model,
+        device_id=local_rank,
+        # NOTE: FULL_SHARD is equivalent to deepspeed ZeRO stage 3
+        sharding_strategy=ShardingStrategy.FULL_SHARD,
+        cpu_offload=CPUOffload(offload_params=True),
+        auto_wrap_policy=size_based_auto_wrap_policy,
+        backward_prefetch=BackwardPrefetch.BACKWARD_PRE,
+    )
+
+    # configure the state dict settings for checkpointing
+    FullyShardedDataParallel.set_state_dict_type(
+        model,
+        state_dict_type=StateDictType.SHARDED_STATE_DICT,
+        state_dict_config=StateDictConfig(offload_to_cpu=True),
+        optim_state_dict_config=OptimStateDictConfig(offload_to_cpu=True),
     )
 
     # NOTE: since this can download data, make sure to do the main process first
@@ -104,9 +132,14 @@ def main():
         "running_loss": 0,
     }
     resumed = False
-    if (exp_dir / "model.pt").exists():
-        model.load_state_dict(_load_to_device(exp_dir / "model.pt"))
-        optimizer.load_state_dict(_load_to_device(exp_dir / "optimizer.pt"))
+    if (exp_dir / "state.json").exists():
+        model.load_state_dict(_load_to_device(exp_dir / f"model.shard-{rank}.pt"))
+        FullyShardedDataParallel.optim_state_dict_to_load(
+            model,
+            optimizer,
+            optim_state_dict=_load_to_device(exp_dir / f"optimizer.shard-{rank}.pt"),
+            load_directly=True,
+        )
         lr_scheduler.load_state_dict(_load_to_device(exp_dir / "lr_scheduler.pt"))
         with open(exp_dir / "state.json") as fp:
             state = json.load(fp)
@@ -201,9 +234,14 @@ def main():
                     t.reset()
 
             if state["global_step"] % args.ckpt_freq == 0:
+                dist.barrier()
+                # NOTE: we have to call this on ALL ranks
+                torch.save(model.state_dict(), exp_dir / f"model.shard-{rank}.pt")
+                torch.save(
+                    FullyShardedDataParallel.optim_state_dict(model, optimizer),
+                    exp_dir / f"optimizer.shard-{rank}.pt",
+                )
                 if rank == 0:
-                    torch.save(optimizer.state_dict(), exp_dir / "optimizer.pt")
-                    torch.save(model.state_dict(), exp_dir / "model.pt")
                     torch.save(lr_scheduler.state_dict(), exp_dir / "lr_scheduler.pt")
                     with open(exp_dir / "state.json", "w") as fp:
                         json.dump(state, fp)

@@ -40,8 +40,7 @@ References:
 
 Two main differences here:
 1. We call `deepspeed.init_distributed` instead of using pytorch's `init_process_group`
-2. We call `deepspeed.initialize` after we've constructed the model.
-
+2. We call `deepspeed.initialize` after we've constructed the model **instead** of wrapping the model with DDP.
 
 **NOTE**: `deepspeed.initialize` will construct the optimizer & lr_scheduler based on the config you pass in
 
@@ -72,6 +71,15 @@ Two main differences here:
      world_size = dist.get_world_size()
  
      _LOGGER.info(f"local rank={local_rank} rank={rank} world size={world_size}")
+ 
+@@ -73,10 +73,6 @@ def main():
+     if len(tokenizer) > embedding_size:
+         model.resize_token_embeddings(len(tokenizer))
+ 
+-    model = DistributedDataParallel(
+-        model, device_ids=[local_rank], output_device=local_rank
+-    )
+-
 @@ -89,9 +95,11 @@ def main():
      )
      _LOGGER.info(f"[{rank}] {len(dataloader)} batches per epoch")
@@ -116,7 +124,7 @@ Loading becomes:
 
 ```diff
      resumed = False
--    if (exp_dir / "model.pt").exists():
+-    if (exp_dir / "state.json").exists():
 -        model.load_state_dict(_load_to_device(exp_dir / "model.pt"))
 -        optimizer.load_state_dict(_load_to_device(exp_dir / "optimizer.pt"))
 -        lr_scheduler.load_state_dict(_load_to_device(exp_dir / "lr_scheduler.pt"))

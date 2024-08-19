@@ -60,9 +60,6 @@ def main():
     dtype = torch.bfloat16
     torch.cuda.set_device(device)
 
-    def _load_to_device(p):
-        return torch.load(p, map_location=device, weights_only=True)
-
     config = AutoConfig.from_pretrained(args.model_name, trust_remote_code=True)
     model = AutoModelForCausalLM.from_config(config, trust_remote_code=True).to(
         dtype=dtype, device=device
@@ -72,10 +69,6 @@ def main():
     embedding_size = model.get_input_embeddings().weight.shape[0]
     if len(tokenizer) > embedding_size:
         model.resize_token_embeddings(len(tokenizer))
-
-    model = DistributedDataParallel(
-        model, device_ids=[local_rank], output_device=local_rank
-    )
 
     # NOTE: since this can download data, make sure to do the main process first
     # NOTE: This assumes that the data is on a **shared** network drive, accessible to all processes
