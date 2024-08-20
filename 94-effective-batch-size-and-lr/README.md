@@ -45,10 +45,10 @@ References:
 
 ## Code Changes
 
-```diff --git a/03-multi-node/train_llm.py b/05-effective-batch-size-and-lr/train_llm.py
+```diff --git a/03-multi-node/train_llm.py b/95-effective-batch-size-and-lr/train_llm.py
 index 38f3cf0..0cd2fac 100644
 --- a/03-multi-node/train_llm.py
-+++ b/05-effective-batch-size-and-lr/train_llm.py
++++ b/95-effective-batch-size-and-lr/train_llm.py
 @@ -89,9 +89,16 @@ def main():
      )
      _LOGGER.info(f"[{rank}] {len(dataloader)} batches per epoch")
