@@ -1,6 +1,5 @@
 import argparse
 from itertools import chain
-import json
 import multiprocessing
 import random
 import time
@@ -10,7 +9,6 @@ import logging
 import torch
 from torch.utils.data import DataLoader
 from torch.utils.data.distributed import DistributedSampler
-from torch.nn.parallel import DistributedDataParallel
 from torch import distributed as dist
 from torch.distributed.elastic.multiprocessing.errors import record
 
@@ -61,10 +59,9 @@ def main():
     torch.cuda.set_device(device)
 
     config = AutoConfig.from_pretrained(args.model_name, trust_remote_code=True)
-    with deepspeed.zero.Init():
-        model = AutoModelForCausalLM.from_config(config, trust_remote_code=True).to(
-            dtype=dtype, device=device
-        )
+    model = AutoModelForCausalLM.from_config(config, trust_remote_code=True).to(
+        dtype=dtype, device=device
+    )
     tokenizer = AutoTokenizer.from_pretrained(args.model_name, trust_remote_code=True)
 
     embedding_size = model.get_input_embeddings().weight.shape[0]
@@ -80,21 +77,21 @@ def main():
         train_data = _load_and_preprocess_data(args, tokenizer, config)
     _LOGGER.info(f"[{rank}] {len(train_data)} training samples")
 
-    dataloader = DataLoader(
-        train_data,
-        batch_size=args.batch_size,
-        collate_fn=default_data_collator,
-        # NOTE: this sampler will split dataset evenly across workers
-        sampler=DistributedSampler(train_data, shuffle=True, drop_last=True),
-    )
-    _LOGGER.info(f"[{rank}] {len(dataloader)} batches per epoch")
-
     model_engine: deepspeed.DeepSpeedEngine
     model_engine, _, _, lr_scheduler = deepspeed.initialize(
         args,
         model=model,
         model_parameters=(p for p in model.parameters() if p.requires_grad),
     )
+
+    dataloader = DataLoader(
+        train_data,
+        batch_size=model_engine.train_micro_batch_size_per_gpu(),
+        collate_fn=default_data_collator,
+        # NOTE: this sampler will split dataset evenly across workers
+        sampler=DistributedSampler(train_data, shuffle=True, drop_last=True),
+    )
+    _LOGGER.info(f"[{rank}] {len(dataloader)} batches per epoch")
 
     exp_dir: Path = Path(args.save_dir) / args.experiment_name
 
@@ -291,8 +288,6 @@ def _get_parser() -> argparse.ArgumentParser:
     parser.add_argument("--save-dir", default="../outputs")
     parser.add_argument("--seed", default=0, type=int)
     parser.add_argument("--num-epochs", default=100, type=int)
-    parser.add_argument("--lr", default=3e-5, type=float)
-    parser.add_argument("--batch-size", default=1, type=int)
     parser.add_argument("--log-freq", default=100, type=int)
     parser.add_argument("--ckpt-freq", default=500, type=int)
     parser.add_argument("--dataset-cache-root", default="../.cache")
