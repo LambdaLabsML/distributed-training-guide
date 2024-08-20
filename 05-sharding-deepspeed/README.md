@@ -152,7 +152,31 @@ Saving becomes: (**NOTE**: saving must be done on ALL ranks instead of just rank
 
 ### Configuration
 
-TODO
+```json
+{
+    "train_micro_batch_size_per_gpu": 64,
+    "optimizer": {
+        "type": "Adam",
+        "params": {
+            "lr": 3e-5
+        }
+    },
+    "scheduler": {
+        "type": "WarmupCosineLR",
+        "params": {
+            "total_num_steps": 1000,
+            "warmup_num_steps": 0,
+            "cos_min_ratio": 1e-2
+        }
+    },
+    "bf16": {
+        "enabled": true
+    },
+    "zero_optimization": {
+        "stage": 3
+    }
+}
+```
 
 ### Command
 
