@@ -10,11 +10,11 @@ This guide aims at a comprehensive guide on best practices for distributed train
 
 #### How do I diagnose hanging/errors that happen during training?
 
-*See chapter 2*
+*See chapter 6*
 
 #### My model/optimizer is too big for a single gpu - how do I train/fine tune it on my cluster?
 
-*See chapters 7 & 8*
+*See chapter 5*
 
 #### How do I schedule/launch training on a cluster?
 
@@ -22,7 +22,7 @@ This guide aims at a comprehensive guide on best practices for distributed train
 
 #### How do I scale my hyperparameters when increasing the number of workers?
 
-*See Chapters 5 & 6*
+*See chapters 94, 95, and 98*
 
 ---
 
