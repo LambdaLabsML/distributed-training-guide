@@ -21,6 +21,7 @@ Turns out, pytorch already has a built in way to use it! You just have to set `T
 ```python
 from torch.distributed.elastic.multiprocessing.errors import record
 
+# NOTE: records errors to $TORCHELASTIC_ERROR_FILE
 @record
 def main():
     ...
