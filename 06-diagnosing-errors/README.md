@@ -30,16 +30,28 @@ Luckily all the code in this guide has been doing this, and so should you! **Mak
 
 ## System metrics to watch for to diagnose hanging
 
-`GPU Power Usage` will be the main one - if the training process is hanging, then the power usage will drop to near 0 for all workers:
+`GPU Power Usage` will be the main one - if the training process is hanging, then the power usage will drop to around ~10% for all workers:
 
 ```
-nvidia-smi --query-gpu=power.draw --format=csv,noheader,nounits
+nvidia-smi --query-gpu=power.draw,power.limit --format=csv,noheader
 ```
 
-## Checklist
+Will output something like this: (note this is with nothing running)
+```
+69.75 W, 700.00 W
+75.10 W, 700.00 W
+70.82 W, 700.00 W
+69.29 W, 700.00 W
+69.19 W, 700.00 W
+68.72 W, 700.00 W
+70.80 W, 700.00 W
+70.87 W, 700.00 W
+```
+
+## Checklist for system problems
 
 1. System date time on each system is the same (can cause NCCL timeouts)
 2. NVLink valid topology `nvidia-smi topo -m`
-3. RDMA stat `ibstat`
-4. Open file descriptor limit is set
+3. NVLink status `nvidia-smi topo -p2p n` (additionally `w`/`r` in place of `n`)
+4. Open file descriptor limit `ulimit -aH` (and then look for line containing `open files`).
 5. `timeout` in `dist.init_process_group(timeout=...)` is sufficiently large.
