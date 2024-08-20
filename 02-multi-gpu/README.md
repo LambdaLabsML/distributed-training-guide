@@ -1,11 +1,11 @@
 # Multi GPU on a single node
 
 ```bash
-TORCHELASTIC_ERROR_FILE=./error.json OMP_NUM_THREADS=1 torchrun --standalone \
+TORCHELASTIC_ERROR_FILE=../error.json OMP_NUM_THREADS=1 torchrun --standalone \
     --nnodes 1 \
     --nproc-per-node gpu \
     --redirects 3 \
-    --log-dir ./logs \
+    --log-dir ../logs \
     train_llm.py \
     --experiment-name gpt2-openwebtext-multi-gpu-$(date +%Y-%m-%dT%H-%M-%S) \
     --dataset-name Skylion007/openwebtext \
@@ -97,7 +97,7 @@ When training with multiple GPUs, we are actually spinning up a process for each
 - `--nnodes` is the number of nodes we are using, in this case 1, but once we go to multiple nodes, this will be > 1.
 - `--nproc-per-node` is the number of processes. `gpu` means to use all available GPUs.
 - `--redirects 3` redirects the stdout & stderr into files
-- `--log-dir ./logs` configures the log directory
+- `--log-dir ../logs` configures the log directory
 
 #### TORCHELASTIC_ERROR_FILE
 

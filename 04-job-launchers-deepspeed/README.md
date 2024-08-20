@@ -38,9 +38,9 @@ index ae1c66f..d5671b3 100644
 4. Launch
 
 ```bash
-TORCHELASTIC_ERROR_FILE=./error.json OMP_NUM_THREADS=1 deepspeed \
+TORCHELASTIC_ERROR_FILE=../error.json OMP_NUM_THREADS=1 deepspeed \
     --include <ip of node 1>@<ip of node 2> \
-    --enable_each_rank_log ./logs \
+    --enable_each_rank_log ../logs \
     train_llm.py \
     --experiment-name deepspeed-multi-node \
     --dataset-name Skylion007/openwebtext \

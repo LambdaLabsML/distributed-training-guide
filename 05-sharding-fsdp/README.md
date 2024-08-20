@@ -24,3 +24,18 @@ See official [FSDP Docs](https://pytorch.org/docs/stable/fsdp.html) & [FSDP Tuto
 TODO
 
 ### Run Command
+
+Same command as normal:
+
+```bash
+TORCHELASTIC_ERROR_FILE=../error.json OMP_NUM_THREADS=1 torchrun --standalone \
+    --nnodes 1 \
+    --nproc-per-node gpu \
+    --redirects 3 \
+    --log-dir ../logs \
+    train_llm.py \
+    --experiment-name fsdp \
+    --dataset-name Skylion007/openwebtext \
+    --model-name openai-community/gpt2 \
+    --batch-size 64
+```

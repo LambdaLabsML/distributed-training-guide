@@ -3,14 +3,14 @@
 See pytorch's documnetation on reproducibility: https://pytorch.org/docs/stable/notes/randomness.html#reproducibility
 
 ```bash
-CUBLAS_WORKSPACE_CONFIG=:4096:8 TORCHELASTIC_ERROR_FILE=./error.json OMP_NUM_THREADS=1 torchrun \
+CUBLAS_WORKSPACE_CONFIG=:4096:8 TORCHELASTIC_ERROR_FILE=../error.json OMP_NUM_THREADS=1 torchrun \
     --rdzv-id multi-node \
     --rdzv-backend c10d \
     --rdzv-endpoint <IP ADDRESS of main node>:<port> \
     --nnodes 2 \
     --nproc-per-node gpu \
     --redirects 3 \
-    --log-dir ./logs \
+    --log-dir ../logs \
     train_llm.py \
     --experiment-name multi-node \
     --dataset-name Skylion007/openwebtext \

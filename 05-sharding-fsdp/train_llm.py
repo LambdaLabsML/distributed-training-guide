@@ -19,14 +19,13 @@ from torch.distributed.fsdp.fully_sharded_data_parallel import (
     CPUOffload,
     ShardingStrategy,
     StateDictType,
-    StateDictConfig,
-    OptimStateDictConfig,
+    ShardedStateDictConfig,
+    ShardedOptimStateDictConfig,
 )
-from torch.distributed.fsdp.wrap import (
-    size_based_auto_wrap_policy,
-    enable_wrap,
-    wrap,
-)
+from torch.distributed.fsdp.wrap import size_based_auto_wrap_policy
+from torch.distributed.checkpoint.state_dict import get_state_dict, set_state_dict
+from torch.distributed.checkpoint import save, load
+
 
 import numpy
 import wandb
@@ -95,8 +94,8 @@ def main():
     FullyShardedDataParallel.set_state_dict_type(
         model,
         state_dict_type=StateDictType.SHARDED_STATE_DICT,
-        state_dict_config=StateDictConfig(offload_to_cpu=True),
-        optim_state_dict_config=OptimStateDictConfig(offload_to_cpu=True),
+        state_dict_config=ShardedStateDictConfig(offload_to_cpu=True),
+        optim_state_dict_config=ShardedOptimStateDictConfig(offload_to_cpu=True),
     )
 
     # NOTE: since this can download data, make sure to do the main process first
@@ -133,6 +132,7 @@ def main():
     }
     resumed = False
     if (exp_dir / "state.json").exists():
+        dist.checkpoint
         model.load_state_dict(_load_to_device(exp_dir / f"model.shard-{rank}.pt"))
         FullyShardedDataParallel.optim_state_dict_to_load(
             model,

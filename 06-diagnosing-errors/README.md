@@ -16,7 +16,7 @@ Note that you have to run this on each node & for each worker you want a dump on
 
 Python has a great built in library for getting errors that occur in any thread of a python program called [faulthandler](https://docs.python.org/3/library/faulthandler.html). This is especially useful when you're using a DataLoader with num_workers > 0.
 
-Turns out, pytorch already has a built in way to use it! You just have to set `TORCHELASTIC_ERROR_FILE=./error.json` environment variable and add a `@record` annotation to your main function. 
+Turns out, pytorch already has a built in way to use it! You just have to set `TORCHELASTIC_ERROR_FILE=../error.json` environment variable and add a `@record` annotation to your main function. 
 
 ```python
 from torch.distributed.elastic.multiprocessing.errors import record

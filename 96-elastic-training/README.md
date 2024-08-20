@@ -29,7 +29,7 @@ torchrun \
     --nproc_per_node 8 \
     --max-restarts 3 \
     --redirects 3 \
-    --log-dir ./logs \
+    --log-dir ../logs \
     toy.py
 ```
 
