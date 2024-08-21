@@ -216,10 +216,6 @@ def main():
             progress_bar.update(1)
 
             if state["global_step"] % args.log_freq == 0:
-                param_norm = 0.0
-                for p in model.parameters():
-                    param_norm += p.to(dtype=torch.float32).norm() ** 2
-                param_norm = param_norm**0.5
                 wandb.log(
                     {
                         "lr": lr_scheduler.get_last_lr()[0],
@@ -228,7 +224,6 @@ def main():
                         "epoch_progress": state["epoch_step"] / len(dataloader),
                         "num_batches_remaining": len(dataloader) - i_step,
                         "time/total": sum(t.avg_elapsed_ms() for t in timers.values()),
-                        "param_norm": param_norm,
                         **{
                             f"time/{k}": timer.avg_elapsed_ms()
                             for k, timer in timers.items()
