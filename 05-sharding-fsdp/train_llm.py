@@ -10,7 +10,6 @@ import logging
 import torch
 from torch.utils.data import DataLoader
 from torch.utils.data.distributed import DistributedSampler
-from torch.nn.parallel import DistributedDataParallel
 from torch import distributed as dist
 from torch.distributed.elastic.multiprocessing.errors import record
 from torch.distributed.fsdp.fully_sharded_data_parallel import (
@@ -18,13 +17,15 @@ from torch.distributed.fsdp.fully_sharded_data_parallel import (
     BackwardPrefetch,
     CPUOffload,
     ShardingStrategy,
-    StateDictType,
-    ShardedStateDictConfig,
-    ShardedOptimStateDictConfig,
 )
 from torch.distributed.fsdp.wrap import size_based_auto_wrap_policy
-from torch.distributed.checkpoint.state_dict import get_state_dict, set_state_dict
-from torch.distributed.checkpoint import save, load
+from torch.distributed.checkpoint.state_dict import (
+    get_state_dict,
+    set_state_dict,
+    StateDictOptions,
+)
+from torch.distributed.checkpoint.state_dict_loader import load
+from torch.distributed.checkpoint.state_dict_saver import save
 
 
 import numpy
@@ -88,14 +89,7 @@ def main():
         cpu_offload=CPUOffload(offload_params=True),
         auto_wrap_policy=size_based_auto_wrap_policy,
         backward_prefetch=BackwardPrefetch.BACKWARD_PRE,
-    )
-
-    # configure the state dict settings for checkpointing
-    FullyShardedDataParallel.set_state_dict_type(
-        model,
-        state_dict_type=StateDictType.SHARDED_STATE_DICT,
-        state_dict_config=ShardedStateDictConfig(offload_to_cpu=True),
-        optim_state_dict_config=ShardedOptimStateDictConfig(offload_to_cpu=True),
+        sync_module_states=True,
     )
 
     # NOTE: since this can download data, make sure to do the main process first
@@ -123,6 +117,8 @@ def main():
 
     exp_dir: Path = Path(args.save_dir) / args.experiment_name
 
+    ckpt_opts = StateDictOptions(full_state_dict=False, cpu_offload=True)
+
     # attempt resume
     state = {
         "epoch": 0,
@@ -132,13 +128,19 @@ def main():
     }
     resumed = False
     if (exp_dir / "state.json").exists():
-        dist.checkpoint
-        model.load_state_dict(_load_to_device(exp_dir / f"model.shard-{rank}.pt"))
-        FullyShardedDataParallel.optim_state_dict_to_load(
+        sharded_model_state, sharded_optimizer_state = get_state_dict(
+            model, optimizer, options=ckpt_opts
+        )
+        load(
+            dict(model=sharded_model_state, optimizer=sharded_optimizer_state),
+            checkpoint_id=exp_dir / "checkpoint",
+        )
+        set_state_dict(
             model,
             optimizer,
-            optim_state_dict=_load_to_device(exp_dir / f"optimizer.shard-{rank}.pt"),
-            load_directly=True,
+            model_state_dict=sharded_model_state,
+            optim_state_dict=sharded_optimizer_state,
+            options=ckpt_opts,
         )
         lr_scheduler.load_state_dict(_load_to_device(exp_dir / "lr_scheduler.pt"))
         with open(exp_dir / "state.json") as fp:
@@ -214,6 +216,10 @@ def main():
             progress_bar.update(1)
 
             if state["global_step"] % args.log_freq == 0:
+                param_norm = 0.0
+                for p in model.parameters():
+                    param_norm += p.to(dtype=torch.float32).norm() ** 2
+                param_norm = param_norm**0.5
                 wandb.log(
                     {
                         "lr": lr_scheduler.get_last_lr()[0],
@@ -222,6 +228,7 @@ def main():
                         "epoch_progress": state["epoch_step"] / len(dataloader),
                         "num_batches_remaining": len(dataloader) - i_step,
                         "time/total": sum(t.avg_elapsed_ms() for t in timers.values()),
+                        "param_norm": param_norm,
                         **{
                             f"time/{k}": timer.avg_elapsed_ms()
                             for k, timer in timers.items()
@@ -236,10 +243,12 @@ def main():
             if state["global_step"] % args.ckpt_freq == 0:
                 dist.barrier()
                 # NOTE: we have to call this on ALL ranks
-                torch.save(model.state_dict(), exp_dir / f"model.shard-{rank}.pt")
-                torch.save(
-                    FullyShardedDataParallel.optim_state_dict(model, optimizer),
-                    exp_dir / f"optimizer.shard-{rank}.pt",
+                sharded_model_state, sharded_optimizer_state = get_state_dict(
+                    model, optimizer, options=ckpt_opts
+                )
+                save(
+                    dict(model=sharded_model_state, optimizer=sharded_optimizer_state),
+                    checkpoint_id=exp_dir / "checkpoint",
                 )
                 if rank == 0:
                     torch.save(lr_scheduler.state_dict(), exp_dir / "lr_scheduler.pt")
