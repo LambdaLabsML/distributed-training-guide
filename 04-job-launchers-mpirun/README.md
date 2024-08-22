@@ -16,6 +16,7 @@ mpirun \
     -bind-to none \
     -map-by slot \
     -wdir $(pwd) \
+    -output-filename ../logs/mpi-multi-node \
     $(which python) train_llm.py \
     --experiment-name mpi-multi-node \
     --dataset-name Skylion007/openwebtext \
