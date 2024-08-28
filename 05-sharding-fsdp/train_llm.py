@@ -1,4 +1,5 @@
 import argparse
+import functools
 from itertools import chain
 import json
 import multiprocessing
@@ -81,15 +82,22 @@ def main():
     if len(tokenizer) > embedding_size:
         model.resize_token_embeddings(len(tokenizer))
 
+    wrap_policy = functools.partial(
+        size_based_auto_wrap_policy, min_num_params=int(args.shard_size)
+    )
     model = FullyShardedDataParallel(
         model,
         device_id=local_rank,
         # NOTE: FULL_SHARD is equivalent to deepspeed ZeRO stage 3
         sharding_strategy=ShardingStrategy.FULL_SHARD,
         cpu_offload=CPUOffload(offload_params=True),
-        auto_wrap_policy=size_based_auto_wrap_policy,
+        auto_wrap_policy=wrap_policy,
         backward_prefetch=BackwardPrefetch.BACKWARD_PRE,
         sync_module_states=True,
+    )
+
+    _LOGGER.info(
+        f"[{rank}] {torch.cuda.max_memory_allocated(device) * 1e-9}gb allocated"
     )
 
     # NOTE: since this can download data, make sure to do the main process first
@@ -117,6 +125,7 @@ def main():
 
     exp_dir: Path = Path(args.save_dir) / args.experiment_name
 
+    # NOTE: full_state_dict=False means we will be saving sharded checkpoints.
     ckpt_opts = StateDictOptions(full_state_dict=False, cpu_offload=True)
 
     # attempt resume
@@ -347,6 +356,7 @@ def _get_parser() -> argparse.ArgumentParser:
     parser.add_argument("--log-freq", default=100, type=int)
     parser.add_argument("--ckpt-freq", default=500, type=int)
     parser.add_argument("--dataset-cache-root", default="../.cache")
+    parser.add_argument("--shard-size", default=100_000_000, type=int)
     return parser
 
 
