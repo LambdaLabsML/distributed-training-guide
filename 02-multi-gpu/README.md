@@ -161,7 +161,7 @@ index 66240cc..d17fcb0 100644
 +    model = DistributedDataParallel(model, device_ids=[rank], output_device=rank)
 ```
 
-### Loading data in rank 0 first
+### Downloading data in rank 0 first
 
 This is mainly necessary because loading our data may download/preprocess some data and write to disk.
 
@@ -169,17 +169,35 @@ If we didn't do rank 0 first, all of our ranks may try to download the data at o
 
 **NOTE: A good best practice is to have your data already downloaded & preprocessed into a shared network drive**
 
-```diff --git a/01-single-gpu/train_llm.py b/02-multi-gpu/train_llm.py
---- a/01-single-gpu/train_llm.py
-+++ b/02-multi-gpu/train_llm.py
+We can add a simple context manager to do this:
+
+```python
+@contextmanager
+def rank0_first():
+    rank = dist.get_rank()
+    if rank == 0:
+        yield
+    dist.barrier()
+    if rank > 0:
+        yield
+    dist.barrier()
+```
+
+```diff
+-    config = AutoConfig.from_pretrained(args.model_name)
+-    model = AutoModelForCausalLM.from_config(config, torch_dtype=dtype).to(device)
+-    tokenizer = AutoTokenizer.from_pretrained(args.model_name)
++    with rank0_first():
++        config = AutoConfig.from_pretrained(args.model_name)
++        model = AutoModelForCausalLM.from_config(config, torch_dtype=dtype).to(device)
++        tokenizer = AutoTokenizer.from_pretrained(args.model_name)
+```
+
+```diff
 -    train_data = _load_and_preprocess_data(args, tokenizer, config)
 +    # NOTE: since this can download data, make sure to do the main process first
-+    if rank == 0:
++    with rank0_first():
 +        train_data = _load_and_preprocess_data(args, tokenizer, config)
-+    dist.barrier()
-+    if rank > 0:
-+        train_data = _load_and_preprocess_data(args, tokenizer, config)
-+    _LOGGER.info(f"[{rank}] {len(train_data)} training samples")
 ```
 
 ### Using DistributedSampler

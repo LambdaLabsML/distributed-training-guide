@@ -1,4 +1,5 @@
 import argparse
+from contextlib import contextmanager
 from itertools import chain
 import json
 import multiprocessing
@@ -57,11 +58,10 @@ def main():
     def _load_to_device(p):
         return torch.load(p, map_location=device, weights_only=True)
 
-    config = AutoConfig.from_pretrained(args.model_name, trust_remote_code=True)
-    model = AutoModelForCausalLM.from_config(config, trust_remote_code=True).to(
-        dtype=dtype, device=device
-    )
-    tokenizer = AutoTokenizer.from_pretrained(args.model_name, trust_remote_code=True)
+    with rank0_first():
+        config = AutoConfig.from_pretrained(args.model_name)
+        model = AutoModelForCausalLM.from_config(config, torch_dtype=dtype).to(device)
+        tokenizer = AutoTokenizer.from_pretrained(args.model_name)
 
     embedding_size = model.get_input_embeddings().weight.shape[0]
     if len(tokenizer) > embedding_size:
@@ -70,10 +70,7 @@ def main():
     model = DistributedDataParallel(model, device_ids=[rank], output_device=rank)
 
     # NOTE: since this can download data, make sure to do the main process first
-    if rank == 0:
-        train_data = _load_and_preprocess_data(args, tokenizer, config)
-    dist.barrier()
-    if rank > 0:
+    with rank0_first():
         train_data = _load_and_preprocess_data(args, tokenizer, config)
     _LOGGER.info(f"[{rank}] {len(train_data)} training samples")
 
@@ -256,6 +253,17 @@ def _load_and_preprocess_data(args, tokenizer, config):
     )
 
     return lm_datasets["train"]
+
+
+@contextmanager
+def rank0_first():
+    rank = dist.get_rank()
+    if rank == 0:
+        yield
+    dist.barrier()
+    if rank > 0:
+        yield
+    dist.barrier()
 
 
 class LocalTimer:
