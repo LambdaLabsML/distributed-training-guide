@@ -75,8 +75,10 @@ def main():
 
     with rank0_first():
         config = AutoConfig.from_pretrained(args.model_name)
-        model = AutoModelForCausalLM.from_config(config, torch_dtype=dtype).to(device)
         tokenizer = AutoTokenizer.from_pretrained(args.model_name)
+        # NOTE: meta device will not allocate any memory
+        with torch.device("meta"):
+            model = AutoModelForCausalLM.from_config(config, torch_dtype=dtype)
 
     embedding_size = model.get_input_embeddings().weight.shape[0]
     if len(tokenizer) > embedding_size:
@@ -86,18 +88,33 @@ def main():
         f"[{rank}] Before FSDP: {torch.cuda.memory_stats(device)['allocated_bytes.all.current'] * 1e-9}gb allocated"
     )
 
+    def safe_param_init_fn(module: torch.nn.Module):
+        """
+        For use in FSDP constructor. This is identical to default behavior of FSDP when dealing with meta device,
+        except pytorch code doesn't check for existence of `reset_parameters()` before calling it. Some modules
+        don't have this implemented, so this is our "fix" for it.
+        """
+        # NOTE: according to FSDP.__init__.param_init_fn documnetaiton, we should set recurse=False
+        module.to_empty(device=device, recurse=False)
+        # NOTE: Since we are training from scratch here, we just reset the parameters,
+        #       otherwise we may want to load in weights directly here, or load
+        #       parameters on rank 0 and use sync_module_states=True in FSDP constructor.
+        if hasattr(module, "reset_parameters"):
+            module.reset_parameters()
+
     wrap_policy = functools.partial(
-        size_based_auto_wrap_policy, min_num_params=int(args.shard_size)
+        size_based_auto_wrap_policy, min_num_params=int(args.numel_to_wrap)
     )
     model = FullyShardedDataParallel(
         model,
         device_id=local_rank,
+        param_init_fn=safe_param_init_fn,
+        sync_module_states=True,
         # NOTE: FULL_SHARD is equivalent to deepspeed ZeRO stage 3
         sharding_strategy=ShardingStrategy.FULL_SHARD,
         cpu_offload=CPUOffload(offload_params=args.cpu_offload == "on"),
         auto_wrap_policy=wrap_policy,
         backward_prefetch=BackwardPrefetch.BACKWARD_PRE,
-        sync_module_states=True,
     )
 
     _LOGGER.info(
@@ -372,7 +389,12 @@ def _get_parser() -> argparse.ArgumentParser:
     parser.add_argument("--log-freq", default=100, type=int)
     parser.add_argument("--ckpt-freq", default=500, type=int)
     parser.add_argument("--dataset-cache-root", default="../.cache")
-    parser.add_argument("--shard-size", default=100_000_000, type=int)
+    parser.add_argument(
+        "--numel-to-wrap",
+        default=100_000_000,
+        type=int,
+        help="Only applies FSDP to modules with numel > this value.",
+    )
     parser.add_argument("--cpu-offload", default="off", choices=["on", "off"])
     return parser
 

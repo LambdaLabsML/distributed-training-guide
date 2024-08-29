@@ -40,3 +40,23 @@ TORCHELASTIC_ERROR_FILE=../error.json OMP_NUM_THREADS=1 torchrun --standalone \
     --model-name openai-community/gpt2 \
     --batch-size 64
 ```
+
+### Examples of memory usage with different configurations
+
+#### Llama 3.1 8B
+
+| --numel-to-wrap | --cpu-offload | --batch-size | peak GPU memory |
+| --------------- | ------------- | ------------ | --------------- |
+| 0               | off           | 0            | 0               |
+| 0               | on            | 0            | 0               |
+| 0               | off           | 0            | 0               |
+| 0               | on            | 0            | 0               |
+
+#### Llama 3.1 80B
+
+| --numel-to-wrap | --cpu-offload | --batch-size | peak GPU memory |
+| --------------- | ------------- | ------------ | --------------- |
+| 0               | off           | 0            | 0               |
+| 0               | on            | 0            | 0               |
+| 0               | off           | 0            | 0               |
+| 0               | on            | 0            | 0               |
