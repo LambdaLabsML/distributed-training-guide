@@ -90,7 +90,7 @@ def main():
         device_id=local_rank,
         # NOTE: FULL_SHARD is equivalent to deepspeed ZeRO stage 3
         sharding_strategy=ShardingStrategy.FULL_SHARD,
-        cpu_offload=CPUOffload(offload_params=True),
+        cpu_offload=CPUOffload(offload_params=args.cpu_offload == "on"),
         auto_wrap_policy=wrap_policy,
         backward_prefetch=BackwardPrefetch.BACKWARD_PRE,
         sync_module_states=True,
@@ -365,6 +365,7 @@ def _get_parser() -> argparse.ArgumentParser:
     parser.add_argument("--ckpt-freq", default=500, type=int)
     parser.add_argument("--dataset-cache-root", default="../.cache")
     parser.add_argument("--shard-size", default=100_000_000, type=int)
+    parser.add_argument("--cpu-offload", default="off", choices=["on", "off"])
     return parser
 
 
