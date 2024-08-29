@@ -44,7 +44,7 @@ TORCHELASTIC_ERROR_FILE=../error.json OMP_NUM_THREADS=1 deepspeed \
     --enable_each_rank_log ../logs \
     train_llm.py \
     --experiment-name deepspeed-multi-node \
-    --dataset-name Skylion007/openwebtext \
+    --dataset-name tatsu-lab/alpaca \
     --model-name openai-community/gpt2 \
     --batch-size 64
 ```

@@ -20,7 +20,7 @@ mpirun \
     -output-filename ../logs/mpi-multi-node \
     $(which python) train_llm.py \
     --experiment-name mpi-multi-node \
-    --dataset-name Skylion007/openwebtext \
+    --dataset-name tatsu-lab/alpaca \
     --model-name openai-community/gpt2 \
     --batch-size 64
 ```

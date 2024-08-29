@@ -36,7 +36,7 @@ TORCHELASTIC_ERROR_FILE=../error.json OMP_NUM_THREADS=1 torchrun --standalone \
     --log-dir ../logs \
     train_llm.py \
     --experiment-name fsdp \
-    --dataset-name Skylion007/openwebtext \
+    --dataset-name tatsu-lab/alpaca \
     --model-name openai-community/gpt2 \
     --batch-size 64
 ```

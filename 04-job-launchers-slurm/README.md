@@ -44,8 +44,8 @@ srun torchrun \
     --redirects 3 \
     --log-dir ${SLURM_SUBMIT_DIR}/logs \
     train_llm.py \
-    --experiment-name gpt2-openwebtext-slurm-$(date +%Y-%m-%dT%H-%M-%S) \
-    --dataset-name Skylion007/openwebtext \
+    --experiment-name gpt2-alpaca-slurm-$(date +%Y-%m-%dT%H-%M-%S) \
+    --dataset-name tatsu-lab/alpaca \
     --model-name openai-community/gpt2 \
     --batch-size 64
 

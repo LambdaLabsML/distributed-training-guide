@@ -186,7 +186,7 @@ TORCHELASTIC_ERROR_FILE=../error.json OMP_NUM_THREADS=1 deepspeed \
     --enable_each_rank_log ../logs \
     train_llm.py \
     --experiment-name deepspeed-multi-node-$(date +%Y-%m-%dT%H-%M-%S) \
-    --dataset-name Skylion007/openwebtext \
+    --dataset-name tatsu-lab/alpaca \
     --model-name openai-community/gpt2 \
     --deepspeed_config ds_config.json
 ```

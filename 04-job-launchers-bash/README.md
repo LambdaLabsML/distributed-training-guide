@@ -32,7 +32,7 @@ cat -n gpus | xargs -n2 \
     -e RANK=$(($0 - 1)) \
     $(which python) train_llm.py \
     --experiment-name multi-node-tmux \
-    --dataset-name Skylion007/openwebtext \
+    --dataset-name tatsu-lab/alpaca \
     --model-name openai-community/gpt2 \
     --batch-size 64'
 ```
@@ -88,7 +88,7 @@ xargs \
     --log-dir ../logs \
     train_llm.py \
     --experiment-name multi-node-tmux \
-    --dataset-name Skylion007/openwebtext \
+    --dataset-name tatsu-lab/alpaca \
     --model-name openai-community/gpt2 \
     --batch-size 64
 ```

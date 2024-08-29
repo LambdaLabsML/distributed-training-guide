@@ -13,8 +13,8 @@ TORCHELASTIC_ERROR_FILE=../error.json OMP_NUM_THREADS=1 torchrun \
     --redirects 3 \
     --log-dir ../logs \
     train_llm.py \
-    --experiment-name gpt2-openwebtext-multi-node-$(date +%Y-%m-%dT%H-%M-%S) \
-    --dataset-name Skylion007/openwebtext \
+    --experiment-name gpt2-alpaca-multi-node-$(date +%Y-%m-%dT%H-%M-%S) \
+    --dataset-name tatsu-lab/alpaca \
     --model-name openai-community/gpt2 \
     --batch-size 64
 ```

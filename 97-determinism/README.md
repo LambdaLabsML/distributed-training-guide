@@ -14,7 +14,7 @@ CUBLAS_WORKSPACE_CONFIG=:4096:8 TORCHELASTIC_ERROR_FILE=../error.json OMP_NUM_TH
     --log-dir ../logs \
     train_llm.py \
     --experiment-name multi-node \
-    --dataset-name Skylion007/openwebtext \
+    --dataset-name tatsu-lab/alpaca \
     --model-name openai-community/gpt2 \
     --batch-size 64
 ```
