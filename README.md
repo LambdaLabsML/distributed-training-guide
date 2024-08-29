@@ -36,9 +36,16 @@ This guide is organized into sequential chapters, each with a `README.md` and a 
 
 ## Set up
 
+### Clone this repo
+
+```bash
+git clone https://github.com/LambdaLabsML/distributed-training-guide.git
+```
+
 ### Virtual Environment
 
 ```bash
+cd distributed-training-guide
 python3 -m venv venv
 source venv/bin/activate
 python -m pip install -U pip
