@@ -3,6 +3,7 @@
 Run this command on **every** participating node
 
 ```bash
+cd distributed-training-guide/03-multi-node
 TORCHELASTIC_ERROR_FILE=../error.json OMP_NUM_THREADS=1 torchrun \
     --rdzv-id multi-node \
     --rdzv-backend c10d \

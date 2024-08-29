@@ -1,6 +1,7 @@
 # Multi GPU on a single node
 
 ```bash
+cd distributed-training-guide/02-multi-gpu
 TORCHELASTIC_ERROR_FILE=../error.json OMP_NUM_THREADS=1 torchrun --standalone \
     --nnodes 1 \
     --nproc-per-node gpu \

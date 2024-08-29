@@ -7,6 +7,7 @@ Since it is quite cumbersome to manually SSH into every node and start a trainin
 There are two main flavors of MPI implementation, OpenMPI and MPICH. Either of them will work and we will use the OpenMPI implementation in this blog. You need to install OpenMPI.
 
 ```bash
+cd distributed-training-guide/04-job-launchers-mpirun
 mpirun \
     -H <host 1>:<gpus on 1>,...,<host n>:<gpus on n> \
     -x MASTER_ADDR=<host 1> \

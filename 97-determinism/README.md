@@ -3,6 +3,7 @@
 See pytorch's documnetation on reproducibility: https://pytorch.org/docs/stable/notes/randomness.html#reproducibility
 
 ```bash
+cd distributed-training-guide/97-determinism
 CUBLAS_WORKSPACE_CONFIG=:4096:8 TORCHELASTIC_ERROR_FILE=../error.json OMP_NUM_THREADS=1 torchrun \
     --rdzv-id multi-node \
     --rdzv-backend c10d \

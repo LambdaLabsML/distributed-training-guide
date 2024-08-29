@@ -27,8 +27,8 @@ We can use [torch.nn.parallel.DistributedDataParallel.no_sync](https://pytorch.o
 
 ```python
 from contextlib import nullcontext
-grad_sync = model.no_sync if i_step % grad_accum != 0 else nullcontext
-with grad_sync():
+maybe_sync_grads = model.no_sync if i_step % grad_accum != 0 else nullcontext
+with maybe_sync_grads():
     outputs = model(**batch)
     outputs.loss.backward()
 if i_step % grad_accum == 0:

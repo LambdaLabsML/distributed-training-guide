@@ -20,6 +20,7 @@ Put your list of hostnames in a file called `gpus`. Each line should contain the
 Then our command is:
 
 ```bash
+cd distributed-training-guide/04-job-launchers-bash
 cat -n gpus | xargs -n2 \
     bash -c 'ssh $1 \
     tmux new-session -d -s rank-$(($0 - 1)) -c $(pwd) \
@@ -69,6 +70,7 @@ Put your list of hostnames/IPs in a file called `hosts`. Each line represents a 
 Then we can use ssh to launch `torchrun` on each of the hosts. This command is very similar to our previous bash command, except we are using `torchrun` (`python -m torch.distributed.run`) instead of just invoking our python script.
 
 ```bash
+cd distributed-training-guide/04-job-launchers-bash
 xargs \
     -a hosts \
     -I {} \

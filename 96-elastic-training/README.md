@@ -24,6 +24,7 @@ Note:
 No code changes are needed to do elastic training for our existing code. Instead it is more informative to play with a toy example where workers randomly crash to give you a sense for how it works.
 
 ```bash
+cd distributed-training-guide/96-elastic-training
 torchrun \
     --nnodes 1 \
     --nproc_per_node 8 \

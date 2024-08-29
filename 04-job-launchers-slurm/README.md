@@ -9,6 +9,7 @@ slurm is a very popular job scheduling software often used with clusters.
 Submit the training job using the provided `job.slurm` script:
 
 ```bash
+cd distributed-training-guide/04-job-launchers-slurm
 sbatch --nnodes 2 --gpus 16 --cpus-per-task 8 job.slurm
 ```
 
