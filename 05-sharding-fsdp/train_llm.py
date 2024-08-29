@@ -82,6 +82,10 @@ def main():
     if len(tokenizer) > embedding_size:
         model.resize_token_embeddings(len(tokenizer))
 
+    _LOGGER.info(
+        f"[{rank}] Before FSDP: {torch.cuda.memory_stats(device)['allocated_bytes.all.current'] * 1e-9}gb allocated"
+    )
+
     wrap_policy = functools.partial(
         size_based_auto_wrap_policy, min_num_params=int(args.shard_size)
     )
@@ -97,7 +101,7 @@ def main():
     )
 
     _LOGGER.info(
-        f"[{rank}] {torch.cuda.max_memory_allocated(device) * 1e-9}gb allocated"
+        f"[{rank}] After FSDP: {torch.cuda.memory_stats(device)['allocated_bytes.all.current'] * 1e-9}gb allocated"
     )
 
     # NOTE: since this can download data, make sure to do the main process first
@@ -222,6 +226,7 @@ def main():
             progress_bar.update(1)
 
             if state["global_step"] % args.log_freq == 0:
+                mem = torch.cuda.memory_stats(device)
                 wandb.log(
                     {
                         "lr": lr_scheduler.get_last_lr()[0],
@@ -229,6 +234,8 @@ def main():
                         "epoch": state["epoch"],
                         "epoch_progress": state["epoch_step"] / len(dataloader),
                         "num_batches_remaining": len(dataloader) - i_step,
+                        "curr_memory_in_gb": 1e-9 * mem["allocated_bytes.all.current"],
+                        "peak_memory_in_gb": 1e-9 * mem["allocated_bytes.all.peak"],
                         "time/total": sum(t.avg_elapsed_ms() for t in timers.values()),
                         **{
                             f"time/{k}": timer.avg_elapsed_ms()
@@ -237,6 +244,7 @@ def main():
                     },
                     step=state["global_step"],
                 )
+                torch.cuda.reset_peak_memory_stats(device)
                 state["running_loss"] = 0
                 for t in timers.values():
                     t.reset()
