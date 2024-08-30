@@ -4,7 +4,13 @@ Up to this point we have assumed that both the model & optimizer fully fit on a 
 
 This becomes an issue once the model becomes big enough - either the model itself cannot fit, or the optimizer (which usually contains 1-4x the memory of the model) cannot fit anymore.
 
-Sharding refers to the idea of only keeping a small part (or shard) of the model or optimizer on a single GPU. This obviously needs some extra synchronization between the workers as not all workers would have the full state.
+Sharding refers to spreading the **storage** of a combination of: optimizer state, gradients, and/or model parameters **across your GPUs**. **The execution of layers DOES NOT CHANGE**.
+
+What this means:
+
+1. Each layer of your model still needs to pull the **entire** layer's parameters/gradients/optimizer states into GPU memory. After the layer is done, then those pieces are resharded.
+2. There are synchronization costs to un-shard and re-shard before and after each layer.
+3. Sharding does not reduce the peak memory cost of your biggest layer.
 
 ## PyTorch FullyShardedDataParallel (FSDP)
 
