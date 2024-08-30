@@ -22,9 +22,40 @@ References:
 
 ### Initialization **after** sharding - the `meta` device
 
-TODO
+
+[meta device docs](https://pytorch.org/docs/stable/meta.html)
+
+This is useful because the meta device does not allocate any memory at all! It makes model initialization extremely fast. You can actually run a lot of the ops with the meta device as well, only the shape will be modified.
+
+This is useful when training large models when we don't want to actually initialize the fully model in memory on each device. We can then use this meta model in conjuction with the FSDP constructor to only initialize the model weights **after** the model has been sharded across the GPUs.
+
+```python
+with torch.device("meta"):
+    model = AutoModelForCausalLM.from_config(config, torch_dtype=dtype)
+```
 
 ### The FSDP Constructor
+
+Here is our FSDP constructor, let's explore each of these arguments in more detail. ALL of the options here have an impact on throughput, memory usage, and peak memory usage.
+
+```python
+model = FullyShardedDataParallel(
+    model,
+    device_id=local_rank,
+    param_init_fn=safe_param_init_fn,
+    sync_module_states=True,
+    auto_wrap_policy=wrap_policy,
+    sharding_strategy=ShardingStrategy.FULL_SHARD,
+    cpu_offload=CPUOffload(offload_params=args.cpu_offload == "on"),
+    backward_prefetch=getattr(BackwardPrefetch, args.bwd_prefetch, default=None),
+)
+```
+
+#### Parameter initialization (when using the `meta` device) - `param_init_fn`
+
+TODO
+
+#### sync_module_states
 
 TODO
 
@@ -32,22 +63,41 @@ TODO
 
 TODO
 
-#### Parameter initialization (when using the `meta` device) - `param_init_fn`
-
-TODO
-
 #### What to shard - `sharding_strategy`
+
+[ShardingStrategy docs](https://pytorch.org/docs/stable/fsdp.html#torch.distributed.fsdp.ShardingStrategy)
 
 FSDP fully implements everything you can do with deepspeed! Here's how the stages align:
 
-> - `ShardingStrategy.FULL_SHARD` maps to the DeepSpeed ZeRO Stage-3. Shards optimizer states, gradients and parameters.
-> - `ShardingStrategy.SHARD_GRAD_OP` maps to the DeepSpeed ZeRO Stage-2. Shards optimizer states and gradients.
-> - `ShardingStrategy.NO_SHARD` maps to ZeRO Stage-0. No sharding wherein each GPU has full copy of model, optimizer states and gradients.
-> - `ShardingStrategy.HYBRID_SHARD` maps to ZeRO++ Stage-3 wherein zero_hpz_partition_size=<num_gpus_per_node>. Here, this will shard optimizer states, gradients and parameters within each node while each node has full copy.
+| FSDP ShardingStrategy | DeepSpeed ZeRO Stage | Shard Optimizer states | Shard Gradients | Shard Parameters |
+| --------------------- | -------------------- | ---------------------- | --------------- | ---------------- |
+| `FULL_SHARD`          | 3                    | ✅                      | ✅               | ✅                |
+| `SHARD_GRAD_OP`       | 2                    | ✅                      | ✅               | ❌                |
+| `NO_SHARD`  (DDP)     | 0                    | ❌                      | ❌               | ❌                |
+| `HYBRID_SHARD`        | ZeRO++ 3             | ✅ (intra-node)         | ✅ (intra-node)  | ✅ (intra-node)   |
+
 
 #### CPU Offload
 
-TODO
+[CPUOffload docs](https://pytorch.org/docs/stable/fsdp.html#torch.distributed.fsdp.CPUOffload)
+
+> If True, then this offloads gradients to CPU as well, meaning that the optimizer step runs on CPU.
+
+This option **heavily** reduces memory requirements - at the cost of a lot of compute and memory bandwidth. The forward & backward pass runs on the GPU, then gradients are offloaded to CPU and the optimizer runs on the CPU.
+
+Note that this option will **NOT reduce peak GPU memory requirements** - each layer will still be fully executed in the GPU.
+
+#### Prefetching layer weights
+
+[BackwardPrefetch docs](https://pytorch.org/docs/stable/fsdp.html#torch.distributed.fsdp.BackwardPrefetch)
+
+These options are mainly for tuning **peak** memory usage vs throughput.
+
+| BackwardPrefetch | Peak Memory Usage per Layer                                                     |
+| ---------------- | ------------------------------------------------------------------------------- |
+| BACKWARD_PRE     | current set of parameters, next set of parameters, and current set of gradients |
+| BACKWARD_POST    | next set of parameters, and current set of gradients                            |
+| None             | -                                                                               |
 
 ### Sharded Checkpoints
 
