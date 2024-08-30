@@ -17,11 +17,11 @@ What this means:
 ## PyTorch FullyShardedDataParallel (FSDP)
 
 References:
+- [FSDP Internals](https://pytorch.org/docs/stable/notes/fsdp.html#fsdp-notes) (Very useful)
 - [FSDP Docs](https://pytorch.org/docs/stable/fsdp.html)
 - [FSDP Tutorial](https://pytorch.org/tutorials/intermediate/FSDP_tutorial.html).
 
 ### Initialization **after** sharding - the `meta` device
-
 
 [meta device docs](https://pytorch.org/docs/stable/meta.html)
 
@@ -36,7 +36,7 @@ with torch.device("meta"):
 
 ### The FSDP Constructor
 
-Here is our FSDP constructor, let's explore each of these arguments in more detail. ALL of the options here have an impact on throughput, memory usage, and peak memory usage.
+Here is our [FSDP constructor](https://pytorch.org/docs/stable/fsdp.html#torch.distributed.fsdp.FullyShardedDataParallel), let's explore each of these arguments in more detail. ALL of the options here have an impact on throughput, memory usage, and peak memory usage.
 
 ```python
 model = FullyShardedDataParallel(
@@ -53,15 +53,65 @@ model = FullyShardedDataParallel(
 
 #### Parameter initialization (when using the `meta` device) - `param_init_fn`
 
-TODO
+##### reset_parameters()
+
+In most cases, if you just want to apply `reset_parameters()` - you actually don't have to specify this parameter. However some models (e.g. Llama 2/3.1) have modules that do not implement `reset_parameters()`. In this chapter we show how to implement a simple version of param_init_fn that is identical to the default FSDP, but just checks for the existence of reset_parameters.
+
+From pytorch documentation:
+
+> As of v1.12, FSDP detects modules with parameters or buffers on meta device via is_meta and either applies `param_init_fn` if specified or calls nn.Module.reset_parameters() otherwise.
+
+You can see how the default behavior is specified in the pytorch source code [torch/distributed/fsdp/_init_utils.py#L889-L890](https://github.com/pytorch/pytorch/blob/v2.4.0/torch/distributed/fsdp/_init_utils.py#L889-L890)
+
+```python
+def safe_param_init_fn(module: torch.nn.Module):
+    """
+    For use in FSDP constructor. This is identical to default behavior of FSDP when dealing with meta device,
+    except pytorch code doesn't check for existence of `reset_parameters()` before calling it. Some modules
+    don't have this implemented, so this is our "fix" for it.
+    """
+    # NOTE: according to FSDP.__init__.param_init_fn documnetaiton, we should set recurse=False
+    module.to_empty(device=device, recurse=False)
+    # NOTE: Since we are training from scratch here, we just reset the parameters,
+    #       otherwise we may want to load in weights directly here, or load
+    #       parameters on rank 0 and use sync_module_states=True in FSDP constructor.
+    if hasattr(module, "reset_parameters"):
+        module.reset_parameters()
+```
+
+##### Loading a checkpoint
+
+The recommended way to perform this is to load the checkpoint onto a single rank (e.g. rank 0), and then use the `sync_module_states=True` to synchronize all the shards.
+
+Loading a checkpoint heavily depends on what library you use. If you are using transformers, you can specify a device map to ensure large models can be stored in a combination of disk/cpu/gpu memory on a single rank.
 
 #### sync_module_states
 
-TODO
+To quote the docs on this:
+
+> If True, then each FSDP module will broadcast module parameters and buffers from rank 0 to ensure that they are replicated across ranks (adding communication overhead to this constructor). This can help load state_dict checkpoints via load_state_dict in a memory efficient way. See FullStateDictConfig for an example of this.
+
 
 #### What layers to shard - the `auto_wrap_policy`
 
-TODO
+By default if you don't specify an auto_wrap_policy, FSDP will be equivalent to DDP. So you need to specify this!
+
+Basically anything that is wrapped by FSDP will be sharded. The `auto_wrap_policy` takes a module and returns a boolean about whether to wrap it.
+
+In this chapter we use the [size_based_auto_wrap_policy](https://github.com/pytorch/pytorch/blob/v2.4.0/torch/distributed/fsdp/wrap.py#L349) in torch.distributed.fsdp.wrap.py, which applies FSDP to a module if the parameters in its subtree exceed 100M numel.
+
+We expose this onto the cli via the argument `--numel-to-wrap`
+
+```python
+import functools
+from torch.distributed.fsdp.wrap import size_based_auto_wrap_policy
+
+auto_wrap_policy = functools.partial(
+    size_based_auto_wrap_policy, min_num_params=int(args.numel_to_wrap)
+)
+```
+
+There are other provided wrap policies, like [transformer_auto_wrap_policy](https://github.com/pytorch/pytorch/blob/v2.4.0/torch/distributed/fsdp/wrap.py#L306) which can wrap specific classes.
 
 #### What to shard - `sharding_strategy`
 
@@ -85,7 +135,7 @@ FSDP fully implements everything you can do with deepspeed! Here's how the stage
 
 This option **heavily** reduces memory requirements - at the cost of a lot of compute and memory bandwidth. The forward & backward pass runs on the GPU, then gradients are offloaded to CPU and the optimizer runs on the CPU.
 
-Note that this option will **NOT reduce peak GPU memory requirements** - each layer will still be fully executed in the GPU.
+Note that this option will **NOT reduce peak GPU memory requirements** - each layer will still be fully executed in the GPU. However there may be more memory for each layer to use as more memory is stored in the CPU.
 
 #### Prefetching layer weights
 
@@ -101,19 +151,90 @@ These options are mainly for tuning **peak** memory usage vs throughput.
 
 ### Sharded Checkpoints
 
-TODO
+Since model parameters may be sharded across GPUs, we need to do checkpointing a little bit differently. The fastest and least memory intensive will be sharded checkpoints, which will just save whatever shard the GPU currently has. Sharded checkpoints are what we recommend.
+
+Here are the imports you need to do this:
+
+```python
+from torch.distributed.checkpoint.state_dict import (
+    get_state_dict,
+    set_state_dict,
+    StateDictOptions,
+)
+from torch.distributed.checkpoint.state_dict_loader import load
+from torch.distributed.checkpoint.state_dict_saver import save
+```
+
+Additionally, we are going to set up our [StateDictOptions](https://pytorch.org/docs/stable/distributed.checkpoint.html#torch.distributed.checkpoint.state_dict.StateDictOptions), because it is used multiple places:
+
+```python
+# NOTE: full_state_dict=False means we will be saving sharded checkpoints.
+ckpt_opts = StateDictOptions(full_state_dict=False, cpu_offload=True)
+```
+
+If we were to set `full_state_dict=True`, then we'd be doing full state dicts.
 
 #### Saving a sharded checkpoint
 
-TODO
+A notable difference to normal checkpoint is that we have to **save on every rank**, because we are doing sharded checkpoints, we need all the shards from every rank.
+
+```python
+if state["global_step"] % args.ckpt_freq == 0:
+    dist.barrier()
+    # NOTE: we have to call this on ALL ranks
+    sharded_model_state, sharded_optimizer_state = get_state_dict(
+        model, optimizer, options=ckpt_opts
+    )
+    save(
+        dict(model=sharded_model_state, optimizer=sharded_optimizer_state),
+        checkpoint_id=exp_dir / "checkpoint",
+    )
+```
+
+[torch.distributed.checkpoint.state_dict.get_state_dict()](https://pytorch.org/docs/stable/distributed.checkpoint.html#torch.distributed.checkpoint.state_dict.get_state_dict) takes in a normal model/optimizer and extracts a state dict that contains the sharded checkpoints.
+
+Then we just call [torch.distributed.checkpoint.state_dict_saver.save()](https://pytorch.org/docs/stable/distributed.checkpoint.html#torch.distributed.checkpoint.state_dict_saver.save) to save this sharded checkpoint.
+
+After this runs, the directory you specify will contain a file per rank!
 
 #### Loading a sharded checkpoint
 
-TODO
+Loading a sharded checkpoint is a little bit more complicated, since we have to convert back and forth between various formats for the checkpoints.
+
+First, we call [torch.distributed.checkpoint.state_dict.get_state_dict()](https://pytorch.org/docs/stable/distributed.checkpoint.html#torch.distributed.checkpoint.state_dict.get_state_dict), just like we did in saving a checkpoint. This will construct the sharded checkpoint dictionaries just like they were constructed when saving:
+
+```python
+sharded_model_state, sharded_optimizer_state = get_state_dict(
+    model, optimizer, options=ckpt_opts
+)
+```
+
+Next we call the opposite of save, [torch.distributed.checkpoint.state_dict_loader.load()](https://pytorch.org/docs/stable/distributed.checkpoint.html#torch.distributed.checkpoint.state_dict_loader.load). At this point the sharded state dicts will contain exactly what we saved earlier.
+
+```python
+load(
+    dict(model=sharded_model_state, optimizer=sharded_optimizer_state),
+    checkpoint_id=exp_dir / "checkpoint",
+)
+```
+
+Finally, we need to apply these sharded checkpoint state dicts to the actual model parameters in our last step, with [torch.distributed.checkpoint.state_dict.set_state_dict()](https://pytorch.org/docs/stable/distributed.checkpoint.html#torch.distributed.checkpoint.state_dict.set_state_dict):
+
+```python
+set_state_dict(
+    model,
+    optimizer,
+    model_state_dict=sharded_model_state,
+    optim_state_dict=sharded_optimizer_state,
+    options=ckpt_opts,
+)
+```
 
 #### Converting a sharded checkpoint to a full state dict checkpoint
 
-TODO
+If you want to convert between formats (like sharded to full state dict), pytorch has a set of utilities for this already. Find the guide here:
+
+https://pytorch.org/tutorials/recipes/distributed_checkpoint_recipe.html#formats
 
 ### Run Command
 
