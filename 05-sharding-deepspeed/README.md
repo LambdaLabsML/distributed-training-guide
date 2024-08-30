@@ -11,7 +11,7 @@ What this means:
 1. Each layer of your model still needs to pull the **entire** layer's parameters/gradients/optimizer states into GPU memory. After the layer is done, then those pieces are resharded.
 2. There are synchronization costs to un-shard and re-shard before and after each layer.
 3. Sharding does not reduce the peak memory cost of your biggest layer.
-4. 
+
 ## DeepSpeed ZeRO
 
 This is actually a collection of modes to shard more and more memory:
