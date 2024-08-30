@@ -53,47 +53,48 @@ TORCHELASTIC_ERROR_FILE=../error.json OMP_NUM_THREADS=1 torchrun --standalone \
 | 8xA100 (80GB) | 100_000_000     | off           | 10           | 8GB / 74GB                       |
 | 8xA100 (80GB) | 100_000_000     | **on**        | 10           | 1.4GB / 68.7GB                   |
 
-###### Wrapped model architecture
 <details>
-```python
-FullyShardedDataParallel(
-  (_fsdp_wrapped_module): LlamaForCausalLM(
-    (model): FullyShardedDataParallel(
-      (_fsdp_wrapped_module): LlamaModel(
-        (embed_tokens): FullyShardedDataParallel(
-          (_fsdp_wrapped_module): Embedding(32000, 4096)
-        )
-        (layers): ModuleList(
-          (0-31): 32 x LlamaDecoderLayer(
-            (self_attn): LlamaSdpaAttention(
-              (q_proj): Linear(in_features=4096, out_features=4096, bias=False)
-              (k_proj): Linear(in_features=4096, out_features=4096, bias=False)
-              (v_proj): Linear(in_features=4096, out_features=4096, bias=False)
-              (o_proj): Linear(in_features=4096, out_features=4096, bias=False)
-              (rotary_emb): LlamaRotaryEmbedding()
+    <summary>Wrapped model architecture</summary>
+    
+    ```python
+    FullyShardedDataParallel(
+      (_fsdp_wrapped_module): LlamaForCausalLM(
+        (model): FullyShardedDataParallel(
+          (_fsdp_wrapped_module): LlamaModel(
+            (embed_tokens): FullyShardedDataParallel(
+              (_fsdp_wrapped_module): Embedding(32000, 4096)
             )
-            (mlp): FullyShardedDataParallel(
-              (_fsdp_wrapped_module): LlamaMLP(
-                (gate_proj): Linear(in_features=4096, out_features=11008, bias=False)
-                (up_proj): Linear(in_features=4096, out_features=11008, bias=False)
-                (down_proj): Linear(in_features=11008, out_features=4096, bias=False)
-                (act_fn): SiLU()
+            (layers): ModuleList(
+              (0-31): 32 x LlamaDecoderLayer(
+                (self_attn): LlamaSdpaAttention(
+                  (q_proj): Linear(in_features=4096, out_features=4096, bias=False)
+                  (k_proj): Linear(in_features=4096, out_features=4096, bias=False)
+                  (v_proj): Linear(in_features=4096, out_features=4096, bias=False)
+                  (o_proj): Linear(in_features=4096, out_features=4096, bias=False)
+                  (rotary_emb): LlamaRotaryEmbedding()
+                )
+                (mlp): FullyShardedDataParallel(
+                  (_fsdp_wrapped_module): LlamaMLP(
+                    (gate_proj): Linear(in_features=4096, out_features=11008, bias=False)
+                    (up_proj): Linear(in_features=4096, out_features=11008, bias=False)
+                    (down_proj): Linear(in_features=11008, out_features=4096, bias=False)
+                    (act_fn): SiLU()
+                  )
+                )
+                (input_layernorm): LlamaRMSNorm((4096,), eps=1e-05)
+                (post_attention_layernorm): LlamaRMSNorm((4096,), eps=1e-05)
               )
             )
-            (input_layernorm): LlamaRMSNorm((4096,), eps=1e-05)
-            (post_attention_layernorm): LlamaRMSNorm((4096,), eps=1e-05)
+            (norm): LlamaRMSNorm((4096,), eps=1e-05)
+            (rotary_emb): LlamaRotaryEmbedding()
           )
         )
-        (norm): LlamaRMSNorm((4096,), eps=1e-05)
-        (rotary_emb): LlamaRotaryEmbedding()
+        (lm_head): FullyShardedDataParallel(
+          (_fsdp_wrapped_module): Linear(in_features=4096, out_features=32000, bias=False)
+        )
       )
     )
-    (lm_head): FullyShardedDataParallel(
-      (_fsdp_wrapped_module): Linear(in_features=4096, out_features=32000, bias=False)
-    )
-  )
-)
-```
+    ```
 </details>
 
 #### meta-llama/Llama-2-70B-hf
@@ -105,49 +106,50 @@ We actually **need** to use `--cpu-offload on` in this case - we can fit the mod
 | 8xA100 (80GB) | 100_000_000     | on            | 2            | 0.3GB / 72.3 GB                  |
 
 
-###### Wrapped model architecture
 <details>
-```python
-FullyShardedDataParallel(
-  (_fsdp_wrapped_module): LlamaForCausalLM(
-    (model): LlamaModel(
-      (embed_tokens): FullyShardedDataParallel(
-        (_fsdp_wrapped_module): Embedding(32000, 8192)
-      )
-      (layers): ModuleList(
-        (0-79): 80 x LlamaDecoderLayer(
-          (self_attn): FullyShardedDataParallel(
-            (_fsdp_wrapped_module): LlamaSdpaAttention(
-              (q_proj): Linear(in_features=8192, out_features=8192, bias=False)
-              (k_proj): Linear(in_features=8192, out_features=1024, bias=False)
-              (v_proj): Linear(in_features=8192, out_features=1024, bias=False)
-              (o_proj): Linear(in_features=8192, out_features=8192, bias=False)
-              (rotary_emb): LlamaRotaryEmbedding()
+    <summary>Wrapped model architecture</summary>
+
+    ```python
+    FullyShardedDataParallel(
+      (_fsdp_wrapped_module): LlamaForCausalLM(
+        (model): LlamaModel(
+          (embed_tokens): FullyShardedDataParallel(
+            (_fsdp_wrapped_module): Embedding(32000, 8192)
+          )
+          (layers): ModuleList(
+            (0-79): 80 x LlamaDecoderLayer(
+              (self_attn): FullyShardedDataParallel(
+                (_fsdp_wrapped_module): LlamaSdpaAttention(
+                  (q_proj): Linear(in_features=8192, out_features=8192, bias=False)
+                  (k_proj): Linear(in_features=8192, out_features=1024, bias=False)
+                  (v_proj): Linear(in_features=8192, out_features=1024, bias=False)
+                  (o_proj): Linear(in_features=8192, out_features=8192, bias=False)
+                  (rotary_emb): LlamaRotaryEmbedding()
+                )
+              )
+              (mlp): LlamaMLP(
+                (gate_proj): FullyShardedDataParallel(
+                  (_fsdp_wrapped_module): Linear(in_features=8192, out_features=28672, bias=False)
+                )
+                (up_proj): FullyShardedDataParallel(
+                  (_fsdp_wrapped_module): Linear(in_features=8192, out_features=28672, bias=False)
+                )
+                (down_proj): FullyShardedDataParallel(
+                  (_fsdp_wrapped_module): Linear(in_features=28672, out_features=8192, bias=False)
+                )
+                (act_fn): SiLU()
+              )
+              (input_layernorm): LlamaRMSNorm((8192,), eps=1e-05)
+              (post_attention_layernorm): LlamaRMSNorm((8192,), eps=1e-05)
             )
           )
-          (mlp): LlamaMLP(
-            (gate_proj): FullyShardedDataParallel(
-              (_fsdp_wrapped_module): Linear(in_features=8192, out_features=28672, bias=False)
-            )
-            (up_proj): FullyShardedDataParallel(
-              (_fsdp_wrapped_module): Linear(in_features=8192, out_features=28672, bias=False)
-            )
-            (down_proj): FullyShardedDataParallel(
-              (_fsdp_wrapped_module): Linear(in_features=28672, out_features=8192, bias=False)
-            )
-            (act_fn): SiLU()
-          )
-          (input_layernorm): LlamaRMSNorm((8192,), eps=1e-05)
-          (post_attention_layernorm): LlamaRMSNorm((8192,), eps=1e-05)
+          (norm): LlamaRMSNorm((8192,), eps=1e-05)
+          (rotary_emb): LlamaRotaryEmbedding()
+        )
+        (lm_head): FullyShardedDataParallel(
+          (_fsdp_wrapped_module): Linear(in_features=8192, out_features=32000, bias=False)
         )
       )
-      (norm): LlamaRMSNorm((8192,), eps=1e-05)
-      (rotary_emb): LlamaRotaryEmbedding()
     )
-    (lm_head): FullyShardedDataParallel(
-      (_fsdp_wrapped_module): Linear(in_features=8192, out_features=32000, bias=False)
-    )
-  )
-)
-```
+    ```
 </details>
