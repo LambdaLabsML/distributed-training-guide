@@ -12,6 +12,8 @@ What this means:
 2. There are synchronization costs to un-shard and re-shard before and after each layer.
 3. Sharding does not reduce the peak memory cost of your biggest layer.
 
+**Sharding is a data parallel technique! NOT a model/tensor/pipeline parallel technique**
+
 ## DeepSpeed ZeRO
 
 This is actually a collection of modes to shard more and more memory:

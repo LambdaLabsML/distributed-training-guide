@@ -12,20 +12,56 @@ What this means:
 2. There are synchronization costs to un-shard and re-shard before and after each layer.
 3. Sharding does not reduce the peak memory cost of your biggest layer.
 
+**Sharding is a data parallel technique! NOT a model/tensor/pipeline parallel technique**
+
 ## PyTorch FullyShardedDataParallel (FSDP)
 
-See official [FSDP Docs](https://pytorch.org/docs/stable/fsdp.html) & [FSDP Tutorial](https://pytorch.org/tutorials/intermediate/FSDP_tutorial.html).
+References:
+- [FSDP Docs](https://pytorch.org/docs/stable/fsdp.html)
+- [FSDP Tutorial](https://pytorch.org/tutorials/intermediate/FSDP_tutorial.html).
 
-> ### Aside: Relation to DeepSpeed
-> 
-> FSDP fully implements everything you can do with deepspeed! Here's how the stages align:
-> 
+### Initialization **after** sharding - the `meta` device
+
+TODO
+
+### The FSDP Constructor
+
+TODO
+
+#### What layers to shard - the `auto_wrap_policy`
+
+TODO
+
+#### Parameter initialization (when using the `meta` device) - `param_init_fn`
+
+TODO
+
+#### What to shard - `sharding_strategy`
+
+FSDP fully implements everything you can do with deepspeed! Here's how the stages align:
+
 > - `ShardingStrategy.FULL_SHARD` maps to the DeepSpeed ZeRO Stage-3. Shards optimizer states, gradients and parameters.
 > - `ShardingStrategy.SHARD_GRAD_OP` maps to the DeepSpeed ZeRO Stage-2. Shards optimizer states and gradients.
 > - `ShardingStrategy.NO_SHARD` maps to ZeRO Stage-0. No sharding wherein each GPU has full copy of model, optimizer states and gradients.
 > - `ShardingStrategy.HYBRID_SHARD` maps to ZeRO++ Stage-3 wherein zero_hpz_partition_size=<num_gpus_per_node>. Here, this will shard optimizer states, gradients and parameters within each node while each node has full copy.
 
-### Code Changes
+#### CPU Offload
+
+TODO
+
+### Sharded Checkpoints
+
+TODO
+
+#### Saving a sharded checkpoint
+
+TODO
+
+#### Loading a sharded checkpoint
+
+TODO
+
+#### Converting a sharded checkpoint to a full state dict checkpoint
 
 TODO
 
@@ -44,7 +80,8 @@ TORCHELASTIC_ERROR_FILE=../error.json OMP_NUM_THREADS=1 torchrun --standalone \
     --experiment-name fsdp \
     --dataset-name tatsu-lab/alpaca \
     --model-name openai-community/gpt2 \
-    --batch-size 64
+    --batch-size 64 \
+    --cpu-offload on
 ```
 
 ### Examples of memory usage with different configurations
