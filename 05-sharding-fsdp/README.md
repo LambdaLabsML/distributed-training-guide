@@ -16,6 +16,8 @@ What this means:
 
 ## PyTorch FullyShardedDataParallel (FSDP)
 
+![image](https://pytorch.org/assets/images/fsdp_workflow.png)
+
 References:
 - [FSDP Internals](https://pytorch.org/docs/stable/notes/fsdp.html#fsdp-notes) (Very useful)
 - [FSDP Docs](https://pytorch.org/docs/stable/fsdp.html)
