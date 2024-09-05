@@ -22,6 +22,9 @@ TORCHELASTIC_ERROR_FILE=../error.json OMP_NUM_THREADS=1 torchrun --standalone \
 
 ## How Distributed Training works
 
+<img width="819" alt="image" src="https://github.com/user-attachments/assets/92b3ee76-18a5-4d08-814f-c0eeda0ceed2">
+
+
 Before we get into the changes required to do distributed training, let's think a little bit. If you've ever done parallel computations before, you know one way to achieve parallelization is to simply split your workload over all your cores. This is really useful if your task is relatively the same for all of the things you want to process. In fact, this is how python's multiprocessing.Pool.map object works.
 
 Well distributed training with a GPU actually works the same way - we are splitting our workload (which is the batches from our dataset) over multiple GPUs.
