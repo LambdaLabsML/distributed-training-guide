@@ -183,7 +183,9 @@ Saving becomes: (**NOTE**: saving must be done on ALL ranks instead of just rank
         "enabled": true
     },
     "zero_optimization": {
-        "stage": 3
+        "stage": 3,
+        "offload_param": false,
+        "offload_optimizer": false
     }
 }
 ```

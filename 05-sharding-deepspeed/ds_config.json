@@ -18,6 +18,8 @@
         "enabled": true
     },
     "zero_optimization": {
-        "stage": 3
+        "stage": 3,
+        "offload_param": false,
+        "offload_optimizer": false
     }
 }
