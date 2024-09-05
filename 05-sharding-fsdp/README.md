@@ -34,6 +34,10 @@ Reference description of the process (from pytorch docs):
 
 ![image](https://pytorch.org/assets/images/fsdp_workflow.png)
 
+And another visualiation of the forward pass:
+
+<img width="852" alt="image" src="https://github.com/user-attachments/assets/2da41b39-1859-4af8-acc6-31a79e7c81a5">
+
 References:
 - [FSDP Internals](https://pytorch.org/docs/stable/notes/fsdp.html#fsdp-notes) (Very useful)
 - [FSDP Docs](https://pytorch.org/docs/stable/fsdp.html)
