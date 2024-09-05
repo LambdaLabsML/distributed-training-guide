@@ -16,6 +16,22 @@ What this means:
 
 ## PyTorch FullyShardedDataParallel (FSDP)
 
+At a high level FSDP works as follow:
+
+- In constructor:
+    - Shard model parameters and each rank only keeps its own shard
+- In forward path:
+    - Run all_gather to collect all shards from all ranks to recover the full parameter in this FSDP unit
+    - Run forward computation
+    - Discard parameter shards it has just collected
+- In backward path:
+    - Run all_gather to collect all shards from all ranks to recover the full parameter in this FSDP unit
+    - Run backward computation
+    - Run reduce_scatter to sync gradients
+    - Discard parameters.
+
+Reference description of the process (from pytorch docs):
+
 ![image](https://pytorch.org/assets/images/fsdp_workflow.png)
 
 References:
