@@ -16,6 +16,8 @@ What this means:
 
 ## DeepSpeed ZeRO
 
+![image](<img width="583" alt="image" src="https://github.com/user-attachments/assets/c2966a46-1807-4a56-92d4-977798087dd6">)
+
 This is actually a collection of modes to shard more and more memory:
 
 > ZeRO Stage 1: The optimizer states (e.g., for Adam optimizer, 32-bit weights, and the first, and second moment estimates) are partitioned across the processes, so that each process updates only its partition.
