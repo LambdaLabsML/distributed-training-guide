@@ -5,7 +5,7 @@ There are a bunch of ways to configure wandb during your training runs. What wil
 Recommendation is:
 
 1. For large clusters (> 32 GPUs), use local_rank 0 if you'd like to track system metrics across the cluster with wandb, or use rank 0 if you want to minimize wandb usage
-2. For everything else, use grouped runs
+2. For everything else, use [grouped runs](https://docs.wandb.ai/guides/runs/grouping)
 
 ## rank 0
 
@@ -45,6 +45,8 @@ name=f"node-{rank // world_size}"
 ```
 
 ## every rank
+
+[Grouping docs](https://docs.wandb.ai/guides/runs/grouping)
 
 This is the configuration that the whole guide uses. It's really useful for tracking as much informatino about your cluster as possible. The downsides are that if you have a very large cluster, you can hit the ratelimit of wandb, and the wandb graphs become unusable.
 
