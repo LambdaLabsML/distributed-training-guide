@@ -138,6 +138,8 @@ def main():
         train_data,
         batch_size=args.batch_size,
         collate_fn=default_data_collator,
+        num_workers=1,
+        prefetch_factor=2,
         # NOTE: this sampler will split dataset evenly across workers
         sampler=DistributedSampler(train_data, shuffle=True, drop_last=True),
     )
@@ -192,33 +194,34 @@ def main():
     (exp_dir / f"rank-{rank}").mkdir(parents=True, exist_ok=True)
     _LOGGER.info(f"[{rank}] Worker saving to {exp_dir / f'rank-{rank}'}")
 
-    wandb.init(
-        project="distributed-training-guide",
-        dir=exp_dir / f"rank-{rank}",
-        group=args.experiment_name,
-        name=f"rank-{rank}",
-        id=f"{args.experiment_name}-{rank}",
-        resume="must" if resumed else None,
-        save_code=True,
-        config={
-            "args": vars(args),
-            "embedding_size": len(tokenizer),
-            "training_data_size": len(train_data),
-            "num_batches": len(dataloader),
-            "rank": rank,
-            "local_rank": local_rank,
-            "world_size": world_size,
-        },
-    )
+    if rank == 0:
+        wandb.init(
+            project="distributed-training-guide",
+            dir=exp_dir,
+            name=f"{args.experiment_name}",
+            id=f"{args.experiment_name}",
+            resume="must" if resumed else None,
+            save_code=True,
+            config={
+                "args": vars(args),
+                "embedding_size": len(tokenizer),
+                "training_data_size": len(train_data),
+                "num_batches": len(dataloader),
+                "world_size": world_size,
+            },
+        )
 
-    timers = {k: LocalTimer(device) for k in ["data", "forward", "backward", "update"]}
+    timers = {
+        k: LocalTimer(device)
+        for k in ["data", "forward", "backward", "update", "waiting"]
+    }
 
     for state["epoch"] in range(state["epoch"], args.num_epochs):
         _LOGGER.info(
             f"[{rank}] Begin epoch {state['epoch']} at step {state['epoch_step']}"
         )
 
-        progress_bar = tqdm.tqdm(range(len(dataloader)), disable=rank > 0)
+        progress_bar = tqdm.tqdm(range(len(dataloader)))
         if state["epoch_step"] > 0:
             progress_bar.update(state["epoch_step"])
 
@@ -233,16 +236,28 @@ def main():
                 # NOTE: for resuming
                 continue
 
+            with timers["waiting"]:
+                dist.barrier()
+
             with timers["forward"]:
                 outputs = model(**batch)
+
+            with timers["waiting"]:
+                dist.barrier()
 
             with timers["backward"]:
                 optimizer.zero_grad()
                 outputs.loss.backward()
 
+            with timers["waiting"]:
+                dist.barrier()
+
             with timers["update"]:
                 optimizer.step()
                 lr_scheduler.step()
+
+            with timers["waiting"]:
+                dist.barrier()
 
             state["global_step"] += 1
             state["epoch_step"] += 1
@@ -251,23 +266,24 @@ def main():
 
             if state["global_step"] % args.log_freq == 0:
                 mem = torch.cuda.memory_stats(device)
-                wandb.log(
-                    {
-                        "lr": lr_scheduler.get_last_lr()[0],
-                        "running_loss": state["running_loss"] / args.log_freq,
-                        "epoch": state["epoch"],
-                        "epoch_progress": state["epoch_step"] / len(dataloader),
-                        "num_batches_remaining": len(dataloader) - i_step,
-                        "curr_memory_in_gb": 1e-9 * mem["allocated_bytes.all.current"],
-                        "peak_memory_in_gb": 1e-9 * mem["allocated_bytes.all.peak"],
-                        "time/total": sum(t.avg_elapsed_ms() for t in timers.values()),
-                        **{
-                            f"time/{k}": timer.avg_elapsed_ms()
-                            for k, timer in timers.items()
-                        },
+                info = {
+                    f"lr": lr_scheduler.get_last_lr()[0],
+                    f"running_loss": state["running_loss"] / args.log_freq,
+                    f"epoch": state["epoch"],
+                    f"epoch_progress": state["epoch_step"] / len(dataloader),
+                    f"num_batches_remaining": len(dataloader) - i_step,
+                    f"curr_memory_in_gb": 1e-9 * mem["allocated_bytes.all.current"],
+                    f"peak_memory_in_gb": 1e-9 * mem["allocated_bytes.all.peak"],
+                    f"time/total": sum(t.avg_elapsed_ms() for t in timers.values()),
+                    **{
+                        f"time/{k}": timer.avg_elapsed_ms()
+                        for k, timer in timers.items()
                     },
-                    step=state["global_step"],
-                )
+                }
+                _LOGGER.info(info)
+                if rank == 0:
+                    wandb.log(info, step=state["global_step"])
+
                 torch.cuda.reset_peak_memory_stats(device)
                 state["running_loss"] = 0
                 for t in timers.values():
