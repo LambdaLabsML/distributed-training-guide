@@ -119,7 +119,7 @@ def main():
     wrapper_fn = {
         "checkpoint": checkpoint_wrapper,
         "offload": offload_wrapper,
-        "keep": None,
+        "in-memory": None,
     }[args.activations]
     if wrapper_fn is not None:
         apply_activation_checkpointing(
@@ -426,7 +426,9 @@ def _get_parser() -> argparse.ArgumentParser:
         choices=["BACKWARD_PRE", "BACKWARD_POST", "off"],
     )
     parser.add_argument(
-        "--activations", default="checkpoint", choices=["offload", "checkpoint", "keep"]
+        "--activations",
+        default="checkpoint",
+        choices=["offload", "checkpoint", "in-memory"],
     )
     return parser
 
