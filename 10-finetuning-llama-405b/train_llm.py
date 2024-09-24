@@ -1,5 +1,6 @@
 import argparse
 from contextlib import contextmanager
+from datetime import timedelta
 import functools
 from itertools import chain
 import json
@@ -63,7 +64,10 @@ def main():
     numpy.random.seed(args.seed)
     random.seed(args.seed)
 
-    dist.init_process_group(backend="nccl" if dist.is_nccl_available() else "mpi")
+    dist.init_process_group(
+        backend="nccl" if dist.is_nccl_available() else "mpi",
+        timeout=timedelta(hours=24),
+    )
 
     rank = dist.get_rank()
     local_rank = rank % torch.cuda.device_count()
@@ -78,17 +82,17 @@ def main():
     def _load_to_device(p):
         return torch.load(p, map_location=device, weights_only=True)
 
-    with rank0_first():
-        config = AutoConfig.from_pretrained(args.model_name)
-        tokenizer = AutoTokenizer.from_pretrained(args.model_name)
-        model = AutoModelForCausalLM.from_pretrained(
-            args.model_name,
-            torch_dtype=dtype,
-            # NOTE: only load the weights on rank 0
-            #       these will be sent to other ranks
-            #       with `sync_module_states=True` later
-            device_map="auto" if rank == 0 else "meta",
-        )
+    config = AutoConfig.from_pretrained(args.model_name)
+    tokenizer = AutoTokenizer.from_pretrained(args.model_name)
+    model = AutoModelForCausalLM.from_pretrained(
+        args.model_name,
+        torch_dtype=dtype,
+        # NOTE: only load the weights on rank 0
+        #       these will be sent to other ranks
+        #       with `sync_module_states=True` later
+        device_map="cpu" if rank == 0 else "meta",
+        attn_implementation="flash_attention_2",
+    )
 
     embedding_size = model.get_input_embeddings().weight.shape[0]
     if len(tokenizer) > embedding_size:
@@ -98,18 +102,33 @@ def main():
         f"[{rank}] Before FSDP: {torch.cuda.memory_stats(device)['allocated_bytes.all.current'] * 1e-9}gb allocated"
     )
 
+    def safe_param_init_fn(module: torch.nn.Module):
+        """
+        For use in FSDP constructor. This is identical to default behavior of FSDP when dealing with meta device,
+        except pytorch code doesn't check for existence of `reset_parameters()` before calling it. Some modules
+        don't have this implemented, so this is our "fix" for it.
+        """
+        # NOTE: according to FSDP.__init__.param_init_fn documnetaiton, we should set recurse=False
+        module.to_empty(device=device, recurse=False)
+        # NOTE: Since we are training from scratch here, we just reset the parameters,
+        #       otherwise we may want to load in weights directly here, or load
+        #       parameters on rank 0 and use sync_module_states=True in FSDP constructor.
+        if hasattr(module, "reset_parameters"):
+            module.reset_parameters()
+
     wrap_policy = functools.partial(
         size_based_auto_wrap_policy, min_num_params=int(args.numel_to_wrap)
     )
     model = FullyShardedDataParallel(
         model,
         device_id=local_rank,
+        param_init_fn=safe_param_init_fn,
         sync_module_states=True,
         # NOTE: FULL_SHARD is equivalent to deepspeed ZeRO stage 3
         auto_wrap_policy=wrap_policy,
         sharding_strategy=ShardingStrategy.FULL_SHARD,
         cpu_offload=CPUOffload(offload_params=args.cpu_offload == "on"),
-        backward_prefetch=getattr(BackwardPrefetch, args.bwd_prefetch, default=None),
+        backward_prefetch=getattr(BackwardPrefetch, args.bwd_prefetch, None),
     )
 
     _LOGGER.info(
