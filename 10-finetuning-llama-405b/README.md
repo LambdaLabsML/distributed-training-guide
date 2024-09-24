@@ -68,12 +68,25 @@ Modes
 
 TODO
 
-## Memory Usage
+## Launch command
 
-## Monitoring
+We provide a customized launch.sh script here based on the bash command for spawning torchrun on all available nodes:
 
-Tailing all torchrun log files at once:
+```bash
+cd distributed-training-guide/10-finetuning-llama-405b
+vim hosts # NOTE: put each host on a different line in this file
+bash launch.sh
+```
+
+Also note that this launch.sh specifies `HF_HOME` as an environment variable in the tmux session, so if you've not used the default value of `distributed-training-guide/.cache`, please update the script!
+
+## Monitoring Logs
+
+Here's a convenience bash command for tailing all torchrun log files at once:
 
 ```bash
 find ../logs/ -name \*.log | xargs tail -f
 ```
+
+## Memory Usage
+

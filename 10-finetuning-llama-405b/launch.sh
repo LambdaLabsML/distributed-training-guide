@@ -3,7 +3,7 @@
 EXPERIMENT_NAME=llama-405b
 
 if [ ! -f ./hosts ]; then
-    echo "./hosts file not found"
+    echo "ERROR: ./hosts file not found. Please add this file to this current directory."
     exit 1
 fi
 
