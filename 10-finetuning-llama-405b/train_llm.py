@@ -52,7 +52,9 @@ _LOGGER = logging.getLogger(__name__)
 
 @record
 def main():
-    logging.basicConfig(level=logging.INFO)
+    logging.basicConfig(
+        format="[%(asctime)s] %(levelname)s:%(message)s", level=logging.INFO
+    )
 
     parser = _get_parser()
     args = parser.parse_args()
