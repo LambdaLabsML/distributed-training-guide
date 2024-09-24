@@ -60,6 +60,10 @@ model = AutoModelForCausalLM.from_pretrained(
 )
 ```
 
+## Auto Wrap - LlamaDecoderLayer
+
+TODO
+
 ## Gradient checkpointing
 
 Modes
@@ -82,9 +86,23 @@ bash launch.sh
 
 Also note that this launch.sh specifies `HF_HOME` as an environment variable in the tmux session, so if you've not used the default value of `distributed-training-guide/.cache`, please update the script!
 
+## Monitoring rank 0 loading progress
+
+Initializing the model takes a **loooooong** time. On 8 8xH100 nodes (64 gpus), it took me ~50 minutes.
+
+When using local node memory instead shared network memory it takes: TODO minutes.
+
+To monitor the progress of this there's two things you can do:
+
+1. Watch the Host memory on `nvtop` for GPU0.
+2. Watch the rank 0 process with `py-spy top --pid <rank 0 pid>`
+
+I haven't found a way in python to have a progress bar, because the functions that take the most time
+are deep in pytorch code.
+
 ## Monitoring Logs
 
-Here's a convenience bash command for tailing all torchrun log files at once:
+Tailing all torchrun log files at once:
 
 ```bash
 find ../logs/ -name \*.log | xargs tail -f

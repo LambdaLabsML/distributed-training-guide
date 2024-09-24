@@ -26,7 +26,7 @@ from torch.distributed.fsdp.fully_sharded_data_parallel import (
     CPUOffload,
     ShardingStrategy,
 )
-from torch.distributed.fsdp.wrap import size_based_auto_wrap_policy
+from torch.distributed.fsdp.wrap import transformer_auto_wrap_policy
 from torch.distributed.checkpoint.state_dict import (
     get_state_dict,
     set_state_dict,
@@ -104,8 +104,10 @@ def main():
         f"[{rank}] Before FSDP: {torch.cuda.memory_stats(device)['allocated_bytes.all.current'] * 1e-9}gb allocated"
     )
 
+    from transformers.models.llama.modeling_llama import LlamaDecoderLayer
+
     wrap_policy = functools.partial(
-        size_based_auto_wrap_policy, min_num_params=int(args.numel_to_wrap)
+        transformer_auto_wrap_policy, transformer_layer_cls={LlamaDecoderLayer}
     )
     model = FullyShardedDataParallel(
         model,
@@ -431,12 +433,6 @@ def _get_parser() -> argparse.ArgumentParser:
     parser.add_argument("--log-freq", default=100, type=int)
     parser.add_argument("--ckpt-freq", default=500, type=int)
     parser.add_argument("--dataset-cache-root", default="../.cache")
-    parser.add_argument(
-        "--numel-to-wrap",
-        default=100_000_000,
-        type=int,
-        help="Only applies FSDP to modules with numel > this value.",
-    )
     parser.add_argument("--cpu-offload", default="on", choices=["on", "off"])
     parser.add_argument(
         "--bwd-prefetch",
