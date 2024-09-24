@@ -12,4 +12,6 @@ print(
 )
 
 with torch.device("meta"):
+    config = transformers.AutoConfig.from_pretrained(model_name)
+    tokenizer = transformers.AutoTokenizer.from_pretrained(model_name)
     model = transformers.AutoModelForCausalLM.from_pretrained(model_name)
