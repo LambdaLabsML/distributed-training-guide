@@ -28,6 +28,7 @@ xargs \
     --dataset-name Skylion007/openwebtext \
     --model-name meta-llama/Meta-Llama-3.1-405B \
     --batch-size 1 \
+    --seq-length 4096 \
     --cpu-offload on \
     --bwd-prefetch off \
     --activations offload

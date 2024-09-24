@@ -134,6 +134,7 @@ def main():
     _LOGGER.info(
         f"[{rank}] After FSDP: {torch.cuda.memory_stats(device)['allocated_bytes.all.current'] * 1e-9}gb allocated"
     )
+    _LOGGER.info(f"FSDP architecture: {model}")
 
     wrapper_fn = {
         "checkpoint": checkpoint_wrapper,
