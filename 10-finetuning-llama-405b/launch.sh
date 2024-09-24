@@ -31,4 +31,5 @@ xargs \
     --seq-length 4096 \
     --cpu-offload on \
     --bwd-prefetch off \
-    --activations offload
+    --activations offload \
+    --log-freq 1

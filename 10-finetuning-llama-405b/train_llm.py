@@ -256,25 +256,35 @@ def main():
                 # NOTE: for resuming
                 continue
 
+            _LOGGER.info(f"{rank=} {i_step=} data sent to device")
+
             with timers["waiting"]:
                 dist.barrier()
 
             with timers["forward"]:
                 outputs = model(**batch)
 
+            _LOGGER.info(f"{rank=} {i_step=} forward() finished")
+
             with timers["waiting"]:
                 dist.barrier()
 
             with timers["backward"]:
                 optimizer.zero_grad()
+                _LOGGER.info(f"{rank=} {i_step=} optimizer.zero_grad() finished")
+
                 outputs.loss.backward()
+                _LOGGER.info(f"{rank=} {i_step=} backward() finished")
 
             with timers["waiting"]:
                 dist.barrier()
 
             with timers["update"]:
                 optimizer.step()
+                _LOGGER.info(f"{rank=} {i_step=} optimizer.step() finished")
+
                 lr_scheduler.step()
+                _LOGGER.info(f"{rank=} {i_step=} lr_scheduler.step() finished")
 
             with timers["waiting"]:
                 dist.barrier()
