@@ -29,6 +29,8 @@ pip install accelerate==0.34.2
 
 ## Download model weights
 
+TODO put these locally only rank 0 machine
+
 The weights need to be on a shared network drive accessible to all nodes. This download script assumes that this repo is cloned into shared network drive.
 
 ```bash
@@ -86,6 +88,12 @@ Here's a convenience bash command for tailing all torchrun log files at once:
 
 ```bash
 find ../logs/ -name \*.log | xargs tail -f
+```
+
+Finding rank 0 log file:
+
+```bash
+find ../logs/ -name \*.log | xargs grep "rank=0"
 ```
 
 ## Memory Usage
