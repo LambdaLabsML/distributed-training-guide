@@ -347,9 +347,9 @@ def _load_and_preprocess_data(args, tokenizer, config):
         desc="Running tokenizer on dataset",
     )
 
-    block_size = tokenizer.model_max_length
-    if block_size > config.max_position_embeddings:
-        block_size = min(1024, config.max_position_embeddings)
+    seq_length = args.seq_length or tokenizer.model_max_length
+    if seq_length > config.max_position_embeddings:
+        seq_length = min(1024, config.max_position_embeddings)
 
     # Main data processing function that will concatenate all texts from our dataset and generate chunks of block_size.
     def group_texts(examples):
@@ -358,11 +358,11 @@ def _load_and_preprocess_data(args, tokenizer, config):
         total_length = len(concatenated_examples[list(examples.keys())[0]])
         # We drop the small remainder, and if the total_length < block_size  we exclude this batch and return an empty dict.
         # We could add padding if the model supported it instead of this drop, you can customize this part to your needs.
-        if total_length > block_size:
-            total_length = (total_length // block_size) * block_size
+        if total_length > seq_length:
+            total_length = (total_length // seq_length) * seq_length
         # Split by chunks of max_len.
         result = {
-            k: [t[i : i + block_size] for i in range(0, total_length, block_size)]
+            k: [t[i : i + seq_length] for i in range(0, total_length, seq_length)]
             for k, t in concatenated_examples.items()
         }
         result["labels"] = result["input_ids"].copy()
@@ -373,7 +373,7 @@ def _load_and_preprocess_data(args, tokenizer, config):
         batched=True,
         num_proc=multiprocessing.cpu_count(),
         load_from_cache_file=True,
-        desc=f"Grouping texts in chunks of {block_size}",
+        desc=f"Grouping texts in chunks of {seq_length}",
     )
 
     return lm_datasets["train"]
@@ -449,6 +449,7 @@ def _get_parser() -> argparse.ArgumentParser:
         default="checkpoint",
         choices=["offload", "checkpoint", "in-memory"],
     )
+    parser.add_argument("--seq-length", default=None, type=int)
     return parser
 
 
