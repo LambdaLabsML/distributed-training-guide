@@ -91,15 +91,15 @@ def main():
         #       with `sync_module_states=True` later
         device_map="cpu" if rank == 0 else "meta",
         attn_implementation="flash_attention_2",
+        use_cache=False,
     )
 
     embedding_size = model.get_input_embeddings().weight.shape[0]
     if len(tokenizer) > embedding_size:
         model.resize_token_embeddings(len(tokenizer))
 
-    _LOGGER.info(
-        f"Before FSDP: {torch.cuda.memory_stats(device)['allocated_bytes.all.current'] * 1e-9}gb allocated"
-    )
+    mem = torch.cuda.memory_stats(device)
+    _LOGGER.info(f"Before FSDP: {(mem["allocated_bytes.all.current"] + mem["reserved_bytes.all.current"]) * 1e-9}gb used")
 
     from transformers.models.llama.modeling_llama import LlamaDecoderLayer
 
@@ -118,8 +118,9 @@ def main():
         backward_prefetch=getattr(BackwardPrefetch, args.bwd_prefetch, None),
     )
 
+    mem = torch.cuda.memory_stats(device)
     _LOGGER.info(
-        f"After FSDP: {torch.cuda.memory_stats(device)['allocated_bytes.all.current'] * 1e-9}gb allocated"
+        f"After FSDP: {(mem["allocated_bytes.all.current"] + mem["reserved_bytes.all.current"]) * 1e-9}gb used"
     )
     _LOGGER.info(f"FSDP architecture: {model}")
 
@@ -290,6 +291,7 @@ def main():
                     f"epoch_progress": state["epoch_step"] / len(dataloader),
                     f"num_batches_remaining": len(dataloader) - i_step,
                     f"curr_memory_in_gb": 1e-9 * mem["allocated_bytes.all.current"],
+                    f"rsvd_memory_in_gb": 1e-9 * mem["reserved_bytes.all.current"],
                     f"peak_memory_in_gb": 1e-9 * mem["allocated_bytes.all.peak"],
                     f"time/total": sum(t.avg_elapsed_ms() for t in timers.values()),
                     **{
