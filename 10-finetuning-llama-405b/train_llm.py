@@ -97,17 +97,6 @@ def main():
     if len(tokenizer) > embedding_size:
         model.resize_token_embeddings(len(tokenizer))
 
-    model.gradient_checkpointing_enable(
-        gradient_checkpointing_kwargs=dict(use_reentrant=False)
-    )
-    # wrapper_fn = {
-    #     "checkpoint": checkpoint_wrapper,
-    #     "offload": offload_wrapper,
-    #     "in-memory": None,
-    # }[args.activations]
-    # if wrapper_fn is not None:
-    #     apply_activation_checkpointing(model, checkpoint_wrapper_fn=wrapper_fn)
-
     _LOGGER.info(
         f"Before FSDP: {torch.cuda.memory_stats(device)['allocated_bytes.all.current'] * 1e-9}gb allocated"
     )
@@ -133,6 +122,14 @@ def main():
         f"After FSDP: {torch.cuda.memory_stats(device)['allocated_bytes.all.current'] * 1e-9}gb allocated"
     )
     _LOGGER.info(f"FSDP architecture: {model}")
+
+    wrapper_fn = {
+        "checkpoint": checkpoint_wrapper,
+        "offload": offload_wrapper,
+        "in-memory": None,
+    }[args.activations]
+    if wrapper_fn is not None:
+        apply_activation_checkpointing(model, checkpoint_wrapper_fn=wrapper_fn)
 
     # NOTE: since this can download data, make sure to do the main process first
     # NOTE: This assumes that the data is on a **shared** network drive, accessible to all processes
@@ -208,8 +205,8 @@ def main():
         wandb.init(
             project="distributed-training-guide",
             dir=exp_dir,
-            name=f"{args.experiment_name}",
-            id=f"{args.experiment_name}",
+            name=args.experiment_name,
+            id=args.experiment_name,
             resume="must" if resumed else None,
             save_code=True,
             config={
@@ -229,7 +226,7 @@ def main():
     for state["epoch"] in range(state["epoch"], args.num_epochs):
         _LOGGER.info(f"Begin epoch {state['epoch']} at step {state['epoch_step']}")
 
-        progress_bar = tqdm.tqdm(range(len(dataloader)))
+        progress_bar = tqdm.tqdm(range(len(dataloader)), disable=True)
         if state["epoch_step"] > 0:
             progress_bar.update(state["epoch_step"])
 
@@ -258,9 +255,6 @@ def main():
                 dist.barrier()
 
             with timers["backward"]:
-                optimizer.zero_grad()
-                _LOGGER.info(f"{rank=} {i_step=} optimizer.zero_grad() finished")
-
                 outputs.loss.backward()
                 _LOGGER.info(f"{rank=} {i_step=} backward() finished")
 
@@ -273,6 +267,9 @@ def main():
 
                 lr_scheduler.step()
                 _LOGGER.info(f"{rank=} {i_step=} lr_scheduler.step() finished")
+
+                optimizer.zero_grad(set_to_none=True)
+                _LOGGER.info(f"{rank=} {i_step=} optimizer.zero_grad() finished")
 
             with timers["waiting"]:
                 dist.barrier()
