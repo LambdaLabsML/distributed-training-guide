@@ -74,13 +74,13 @@ while True:
     max_host_length = max(map(len, hosts))
 
     print("===")
-    print(f"{'name':>20}\t{'util':>20}\t{'power_usage':>20}\t{'memory_usage':>20}")
+    print(f"{'name':>10}\t{'util':>10}\t{'power':>10}\t{'memory':>10}")
     print(
-        f"{'cluster':>20}\t{cluster_stats['util']:>19.1f}%\t{cluster_stats['power_usage']:>19.1f}%\t{cluster_stats['memory_usage']:>19.1f}%"
+        f"{'cluster':>10}\t{cluster_stats['util']:>9.1f}%\t{cluster_stats['power_usage']:>9.1f}%\t{cluster_stats['memory_usage']:>9.1f}%"
     )
     for host, stats in node_stats.items():
         print(
-            f"{host:>20}\t{stats['util']:>19.1f}%\t{stats['power_usage']:>19.1f}%\t{stats['memory_usage']:>19.1f}%"
+            f"{host:>10}\t{stats['util']:>9.1f}%\t{stats['power_usage']:>9.1f}%\t{stats['memory_usage']:>9.1f}%"
         )
     print("===")
 
