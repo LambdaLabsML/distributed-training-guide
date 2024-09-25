@@ -99,7 +99,9 @@ def main():
         model.resize_token_embeddings(len(tokenizer))
 
     mem = torch.cuda.memory_stats(device)
-    _LOGGER.info(f"Before FSDP: {(mem["allocated_bytes.all.current"] + mem["reserved_bytes.all.current"]) * 1e-9}gb used")
+    _LOGGER.info(
+        f"Before FSDP: {(mem['allocated_bytes.all.current'] + mem['reserved_bytes.all.current']) * 1e-9}gb used"
+    )
 
     from transformers.models.llama.modeling_llama import LlamaDecoderLayer
 
@@ -120,7 +122,7 @@ def main():
 
     mem = torch.cuda.memory_stats(device)
     _LOGGER.info(
-        f"After FSDP: {(mem["allocated_bytes.all.current"] + mem["reserved_bytes.all.current"]) * 1e-9}gb used"
+        f"After FSDP: {(mem['allocated_bytes.all.current'] + mem['reserved_bytes.all.current']) * 1e-9}gb used"
     )
     _LOGGER.info(f"FSDP architecture: {model}")
 
