@@ -94,6 +94,14 @@ def main():
     if len(tokenizer) > embedding_size:
         model.resize_token_embeddings(len(tokenizer))
 
+    wrapper_fn = {
+        "checkpoint": checkpoint_wrapper,
+        "offload": offload_wrapper,
+        "in-memory": None,
+    }[args.activations]
+    if wrapper_fn is not None:
+        apply_activation_checkpointing(model, checkpoint_wrapper_fn=wrapper_fn)
+
     _LOGGER.info(
         f"Before FSDP: {torch.cuda.memory_stats(device)['allocated_bytes.all.current'] * 1e-9}gb allocated"
     )
@@ -119,14 +127,6 @@ def main():
         f"After FSDP: {torch.cuda.memory_stats(device)['allocated_bytes.all.current'] * 1e-9}gb allocated"
     )
     _LOGGER.info(f"FSDP architecture: {model}")
-
-    wrapper_fn = {
-        "checkpoint": checkpoint_wrapper,
-        "offload": offload_wrapper,
-        "in-memory": None,
-    }[args.activations]
-    if wrapper_fn is not None:
-        apply_activation_checkpointing(model, checkpoint_wrapper_fn=wrapper_fn)
 
     # NOTE: since this can download data, make sure to do the main process first
     # NOTE: This assumes that the data is on a **shared** network drive, accessible to all processes

@@ -12,7 +12,7 @@ xargs \
     -I {} \
     ssh {} \
     tmux new-session -d -s torchrun-{} -c $(pwd) \
-    -e HF_HOME=$(pwd)/../.cache \
+    -e HF_HOME=/home/ubuntu/.cache/huggingface \
     -e TORCHELASTIC_ERROR_FILE=../error.json \
     -e OMP_NUM_THREADS=1 \
     $(which python) -m torch.distributed.run \
@@ -30,6 +30,6 @@ xargs \
     --batch-size 1 \
     --seq-length 4096 \
     --cpu-offload on \
-    --bwd-prefetch off \
+    --bwd-prefetch BACKWARD_PRE \
     --activations checkpoint \
     --log-freq 1
