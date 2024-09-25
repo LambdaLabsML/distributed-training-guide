@@ -126,11 +126,7 @@ def main():
         "in-memory": None,
     }[args.activations]
     if wrapper_fn is not None:
-        apply_activation_checkpointing(
-            model,
-            checkpoint_wrapper_fn=wrapper_fn,
-            check_fn=lambda l: True,
-        )
+        apply_activation_checkpointing(model, checkpoint_wrapper_fn=wrapper_fn)
 
     # NOTE: since this can download data, make sure to do the main process first
     # NOTE: This assumes that the data is on a **shared** network drive, accessible to all processes
