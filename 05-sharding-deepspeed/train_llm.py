@@ -53,7 +53,7 @@ def main():
         local_rank = rank % torch.cuda.device_count()
     world_size = dist.get_world_size()
 
-    _LOGGER.info(f"local rank={local_rank} rank={rank} world size={world_size}")
+    _LOGGER.info(f"local_rank={local_rank} rank={rank} world size={world_size}")
 
     device = torch.device(f"cuda:{local_rank}")
     dtype = torch.bfloat16

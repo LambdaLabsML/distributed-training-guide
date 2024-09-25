@@ -67,7 +67,7 @@ def main():
     )
 
     _LOGGER.info(args)
-    _LOGGER.info(f"local rank={local_rank} rank={rank} world size={world_size}")
+    _LOGGER.info(f"local_rank={local_rank} rank={rank} world size={world_size}")
 
     torch.manual_seed(args.seed)
     torch.cuda.manual_seed_all(args.seed)

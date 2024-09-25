@@ -78,7 +78,7 @@ Two main differences here:
 +        local_rank = rank % torch.cuda.device_count()
      world_size = dist.get_world_size()
  
-     _LOGGER.info(f"local rank={local_rank} rank={rank} world size={world_size}")
+     _LOGGER.info(f"local_rank={local_rank} rank={rank} world size={world_size}")
  
 @@ -73,10 +73,6 @@ def main():
      if len(tokenizer) > embedding_size:

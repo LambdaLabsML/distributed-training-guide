@@ -54,7 +54,7 @@ index 3130381..d5cb05c 100644
 -    assert world_size == torch.cuda.device_count()
  
 -    _LOGGER.info(f"rank={rank} world size={world_size}")
-+    _LOGGER.info(f"local rank={local_rank} rank={rank} world size={world_size}")
++    _LOGGER.info(f"local_rank={local_rank} rank={rank} world size={world_size}")
  
 -    device = torch.device(f"cuda:{rank}")
 +    device = torch.device(f"cuda:{local_rank}")
