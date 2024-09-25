@@ -5,6 +5,7 @@ import functools
 from itertools import chain
 import json
 import multiprocessing
+import os
 import random
 import time
 from pathlib import Path
@@ -78,6 +79,8 @@ def main():
     dtype = torch.bfloat16
     torch.cuda.set_device(device)
 
+    _LOGGER.info(f"Loading model from HF_HOME={os.environ['HF_HOME']}")
+
     config = AutoConfig.from_pretrained(args.model_name)
     tokenizer = AutoTokenizer.from_pretrained(args.model_name)
     model = AutoModelForCausalLM.from_pretrained(
@@ -94,13 +97,14 @@ def main():
     if len(tokenizer) > embedding_size:
         model.resize_token_embeddings(len(tokenizer))
 
-    wrapper_fn = {
-        "checkpoint": checkpoint_wrapper,
-        "offload": offload_wrapper,
-        "in-memory": None,
-    }[args.activations]
-    if wrapper_fn is not None:
-        apply_activation_checkpointing(model, checkpoint_wrapper_fn=wrapper_fn)
+    model.gradient_checkpointing_enable(use_reentrant=False)
+    # wrapper_fn = {
+    #     "checkpoint": checkpoint_wrapper,
+    #     "offload": offload_wrapper,
+    #     "in-memory": None,
+    # }[args.activations]
+    # if wrapper_fn is not None:
+    #     apply_activation_checkpointing(model, checkpoint_wrapper_fn=wrapper_fn)
 
     _LOGGER.info(
         f"Before FSDP: {torch.cuda.memory_stats(device)['allocated_bytes.all.current'] * 1e-9}gb allocated"
