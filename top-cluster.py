@@ -43,7 +43,7 @@ while True:
         gpu_stats[host] = {}
         for gpu, stats in enumerate(output.splitlines()[1:]):
             util, power_draw, power_limit, memory_used, memory_total = stats.split(", ")
-            util = float(util)
+            util = float(util.split()[0])
             power_usage = (
                 100 * float(power_draw.split()[0]) / float(power_limit.split()[0])
             )
@@ -76,11 +76,11 @@ while True:
     print("===")
     print(f"{'name':>20}\t{'util':>20}\t{'power_usage':>20}\t{'memory_usage':>20}")
     print(
-        f"{'cluster':>20}\t{cluster_stats['util']:>20}\t{cluster_stats['power_usage']:>20.1f}\t{cluster_stats['memory_usage']:>20.1f}"
+        f"{'cluster':>20}\t{cluster_stats['util']:>19}%\t{cluster_stats['power_usage']:>19.1f}%\t{cluster_stats['memory_usage']:>19.1f}%"
     )
     for host, stats in node_stats.items():
         print(
-            f"{host:>20}\t{stats['util']:>20}\t{stats['power_usage']:>20.1f}\t{stats['memory_usage']:>20.1f}"
+            f"{host:>20}\t{stats['util']:>19}%\t{stats['power_usage']:>19.1f}%\t{stats['memory_usage']:>19.1f}%"
         )
     print("===")
 

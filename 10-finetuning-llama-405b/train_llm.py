@@ -129,7 +129,7 @@ def main():
         apply_activation_checkpointing(
             model,
             checkpoint_wrapper_fn=wrapper_fn,
-            check_fn=lambda l: "Attention" in l.__class__.__name__,
+            check_fn=lambda l: True,
         )
 
     # NOTE: since this can download data, make sure to do the main process first
