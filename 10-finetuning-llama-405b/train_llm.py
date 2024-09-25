@@ -52,37 +52,31 @@ _LOGGER = logging.getLogger(__name__)
 
 @record
 def main():
-    logging.basicConfig(
-        format="[%(asctime)s] %(levelname)s:%(message)s", level=logging.INFO
-    )
-
     parser = _get_parser()
     args = parser.parse_args()
 
+    dist.init_process_group(backend="nccl" if dist.is_nccl_available() else "mpi")
+
+    rank = dist.get_rank()
+    local_rank = rank % torch.cuda.device_count()
+    world_size = dist.get_world_size()
+
+    logging.basicConfig(
+        format=f"[rank={rank}] [%(asctime)s] %(levelname)s:%(message)s",
+        level=logging.INFO,
+    )
+
     _LOGGER.info(args)
+    _LOGGER.info(f"local rank={local_rank} rank={rank} world size={world_size}")
 
     torch.manual_seed(args.seed)
     torch.cuda.manual_seed_all(args.seed)
     numpy.random.seed(args.seed)
     random.seed(args.seed)
 
-    dist.init_process_group(
-        backend="nccl" if dist.is_nccl_available() else "mpi",
-        timeout=timedelta(hours=24),
-    )
-
-    rank = dist.get_rank()
-    local_rank = rank % torch.cuda.device_count()
-    world_size = dist.get_world_size()
-
-    _LOGGER.info(f"local rank={local_rank} rank={rank} world size={world_size}")
-
     device = torch.device(f"cuda:{local_rank}")
     dtype = torch.bfloat16
     torch.cuda.set_device(device)
-
-    def _load_to_device(p):
-        return torch.load(p, map_location=device, weights_only=True)
 
     config = AutoConfig.from_pretrained(args.model_name)
     tokenizer = AutoTokenizer.from_pretrained(args.model_name)
@@ -101,7 +95,7 @@ def main():
         model.resize_token_embeddings(len(tokenizer))
 
     _LOGGER.info(
-        f"[{rank}] Before FSDP: {torch.cuda.memory_stats(device)['allocated_bytes.all.current'] * 1e-9}gb allocated"
+        f"Before FSDP: {torch.cuda.memory_stats(device)['allocated_bytes.all.current'] * 1e-9}gb allocated"
     )
 
     from transformers.models.llama.modeling_llama import LlamaDecoderLayer
@@ -122,7 +116,7 @@ def main():
     )
 
     _LOGGER.info(
-        f"[{rank}] After FSDP: {torch.cuda.memory_stats(device)['allocated_bytes.all.current'] * 1e-9}gb allocated"
+        f"After FSDP: {torch.cuda.memory_stats(device)['allocated_bytes.all.current'] * 1e-9}gb allocated"
     )
     _LOGGER.info(f"FSDP architecture: {model}")
 
@@ -142,7 +136,7 @@ def main():
     # NOTE: This assumes that the data is on a **shared** network drive, accessible to all processes
     with rank0_first():
         train_data = _load_and_preprocess_data(args, tokenizer, config)
-    _LOGGER.info(f"[{rank}] {len(train_data)} training samples")
+    _LOGGER.info(f"{len(train_data)} training samples")
 
     dataloader = DataLoader(
         train_data,
@@ -153,7 +147,7 @@ def main():
         # NOTE: this sampler will split dataset evenly across workers
         sampler=DistributedSampler(train_data, shuffle=True, drop_last=True),
     )
-    _LOGGER.info(f"[{rank}] {len(dataloader)} batches per epoch")
+    _LOGGER.info(f"{len(dataloader)} batches per epoch")
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr)
     lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
@@ -188,11 +182,15 @@ def main():
             optim_state_dict=sharded_optimizer_state,
             options=ckpt_opts,
         )
-        lr_scheduler.load_state_dict(_load_to_device(exp_dir / "lr_scheduler.pt"))
+        lr_scheduler.load_state_dict(
+            torch.load(
+                exp_dir / "lr_scheduler.pt", map_location=device, weights_only=True
+            )
+        )
         with open(exp_dir / "state.json") as fp:
             state = json.load(fp)
         resumed = True
-    _LOGGER.info(f"[{rank}] Resumed={resumed} | {state}")
+    _LOGGER.info(f"Resumed={resumed} | {state}")
 
     dist.barrier()
     if rank == 0:
@@ -202,7 +200,7 @@ def main():
     dist.barrier()
 
     (exp_dir / f"rank-{rank}").mkdir(parents=True, exist_ok=True)
-    _LOGGER.info(f"[{rank}] Worker saving to {exp_dir / f'rank-{rank}'}")
+    _LOGGER.info(f"Worker saving to {exp_dir / f'rank-{rank}'}")
 
     if rank == 0:
         wandb.init(
@@ -227,9 +225,7 @@ def main():
     }
 
     for state["epoch"] in range(state["epoch"], args.num_epochs):
-        _LOGGER.info(
-            f"[{rank}] Begin epoch {state['epoch']} at step {state['epoch_step']}"
-        )
+        _LOGGER.info(f"Begin epoch {state['epoch']} at step {state['epoch_step']}")
 
         progress_bar = tqdm.tqdm(range(len(dataloader)))
         if state["epoch_step"] > 0:
