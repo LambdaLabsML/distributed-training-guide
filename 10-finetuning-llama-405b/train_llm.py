@@ -97,7 +97,9 @@ def main():
     if len(tokenizer) > embedding_size:
         model.resize_token_embeddings(len(tokenizer))
 
-    model.gradient_checkpointing_enable(use_reentrant=False)
+    model.gradient_checkpointing_enable(
+        gradient_checkpointing_kwargs=dict(use_reentrant=False)
+    )
     # wrapper_fn = {
     #     "checkpoint": checkpoint_wrapper,
     #     "offload": offload_wrapper,
