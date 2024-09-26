@@ -74,7 +74,7 @@ def main():
         return torch.load(p, map_location=device, weights_only=True)
 
     with rank0_first():
-        config = AutoConfig.from_pretrained(args.model_name)
+        config = AutoConfig.from_pretrained(args.model_name, use_cache=False)
         tokenizer = AutoTokenizer.from_pretrained(args.model_name)
         # NOTE: meta device will not allocate any memory
         with torch.device("meta"):

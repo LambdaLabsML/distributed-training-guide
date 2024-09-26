@@ -60,7 +60,7 @@ def main():
     torch.cuda.set_device(device)
 
     with rank0_first():
-        config = AutoConfig.from_pretrained(args.model_name)
+        config = AutoConfig.from_pretrained(args.model_name, use_cache=False)
         model = AutoModelForCausalLM.from_config(config, torch_dtype=dtype).to(device)
         tokenizer = AutoTokenizer.from_pretrained(args.model_name)
 

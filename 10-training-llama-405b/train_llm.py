@@ -81,18 +81,19 @@ def main():
 
     _LOGGER.info(f"Loading model from HF_HOME={os.environ['HF_HOME']}")
 
-    config = AutoConfig.from_pretrained(args.model_name)
+    config = AutoConfig.from_pretrained(args.model_name, use_cache=False)
     tokenizer = AutoTokenizer.from_pretrained(args.model_name)
-    model = AutoModelForCausalLM.from_pretrained(
-        args.model_name,
-        torch_dtype=dtype,
-        # NOTE: only load the weights on rank 0
-        #       these will be sent to other ranks
-        #       with `sync_module_states=True` later
-        device_map="cpu" if rank == 0 else "meta",
-        attn_implementation="flash_attention_2",
-        use_cache=False,
-    )
+    if rank == 0:
+        model = AutoModelForCausalLM.from_pretrained(
+            args.model_name,
+            torch_dtype=dtype,
+            device_map="cpu",
+            attn_implementation="flash_attention_2",
+            use_cache=False,
+        )
+    else:
+        with torch.device("meta"):
+            model = AutoModelForCausalLM.from_config(config, torch_dtype=dtype)
 
     embedding_size = model.get_input_embeddings().weight.shape[0]
     if len(tokenizer) > embedding_size:
