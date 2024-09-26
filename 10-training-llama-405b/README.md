@@ -55,19 +55,37 @@ else:
 
 Then later, sync_module_states in FSDP constructor will make sure the weights are broadcasted from rank 0 to the other ranks.
 
-## Auto Wrap - LlamaDecoderLayer
+## Sharding the LlamaDecoderLayer
 
-TODO
+Here we are just going to be sharding the LlamaDecoderLayer (there's 191 of them). We can use the `transformer_auto_wrap_policy` to target the specific class for that layer:
+
+```python
+from torch.distributed.fsdp.wrap import transformer_auto_wrap_policy
+from transformers.models.llama.modeling_llama import LlamaDecoderLayer
+
+wrap_policy = functools.partial(
+    transformer_auto_wrap_policy, transformer_layer_cls={LlamaDecoderLayer}
+)
+
+FSDP(..., auto_wrap_policy=wrap_policy)
+```
 
 ## Gradient checkpointing
 
-Modes
-1. Checkpointing
-2. Offload
+Another piece of this is gradient checkpointing, which saves a lot of memory. This piece of code has to go **after** the FSDP constructor!!! I'm not exactly sure of the reason, but it doesn't work before the FSDP initialization.
 
-## FSDP Prefetching
+The method we are using is kind of a hidden method in pytorch, but this is actually exactly what [accelerate uses under the hood](https://github.com/huggingface/accelerate/blob/v0.34.2/src/accelerate/accelerator.py#L1492) so rest assured that it is a "standard" way of doing it:
 
-TODO
+```python
+from torch.distributed.algorithms._checkpoint.checkpoint_wrapper import (
+    apply_activation_checkpointing,
+    checkpoint_wrapper,
+)
+
+apply_activation_checkpointing(
+    model, checkpoint_wrapper_fn=checkpoint_wrapper, auto_wrap_policy=wrap_policy
+)
+```
 
 ## Launch command
 
@@ -75,39 +93,29 @@ We provide a customized launch.sh script here based on the bash command for spaw
 
 ```bash
 cd distributed-training-guide/10-finetuning-llama-405b
-vim hosts # NOTE: put each host on a different line in this file
-bash launch.sh
+bash launch.sh # NOTE: this is non blocking
 ```
 
-Also note that this launch.sh specifies `HF_HOME` as an environment variable in the tmux session, so if you've not used the default value of `distributed-training-guide/.cache`, please update the script!
+Also note that this launch.sh specifies `HF_HOME` as an environment variable in the tmux session, so if you've not used the default value of `/home/ubuntu/.cache/huggingface`, please update the script!
 
-## Monitoring rank 0 loading progress
+You can change the hostnames in the `hosts` file in this directory.
 
-Initializing the model takes a **loooooong** time. On 8 8xH100 nodes (64 gpus), it took me ~50 minutes.
+## Monitoring
 
-When using local node memory instead shared network memory it takes: TODO minutes.
-
-To monitor the progress of this there's two things you can do:
-
-1. Watch the Host memory on `nvtop` for GPU0.
-2. Watch the rank 0 process with `py-spy top --pid <rank 0 pid>`
-
-I haven't found a way in python to have a progress bar, because the functions that take the most time
-are deep in pytorch code.
-
-## Monitoring Logs
-
-Tailing all torchrun log files at once:
+The log files are really useful for monitoring the progress of everything. Here's a bash command for tailing all of them at once:
 
 ```bash
-find ../logs/ -name \*.log | xargs tail -f
+find ../logs/ -name \*stderr.log | xargs tail -f
 ```
 
-Finding rank 0 log file:
+Additionally, we have a top like utility script for monitoring the entire cluster at the top level of this directory:
 
 ```bash
-find ../logs/ -name \*.log | xargs grep "rank=0"
+python ../top-cluster.py hosts
 ```
 
-## Memory Usage
+## Run statistics
 
+### Memory Usage
+
+### Throughput

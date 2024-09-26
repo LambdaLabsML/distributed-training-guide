@@ -30,6 +30,4 @@ xargs \
     --batch-size 1 \
     --seq-length 4096 \
     --cpu-offload on \
-    --bwd-prefetch BACKWARD_PRE \
-    --activations checkpoint \
     --log-freq 1

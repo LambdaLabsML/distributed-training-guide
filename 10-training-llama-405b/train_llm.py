@@ -18,7 +18,6 @@ from torch import distributed as dist
 from torch.distributed.algorithms._checkpoint.checkpoint_wrapper import (
     apply_activation_checkpointing,
     checkpoint_wrapper,
-    offload_wrapper,
 )
 from torch.distributed.elastic.multiprocessing.errors import record
 from torch.distributed.fsdp.fully_sharded_data_parallel import (
@@ -127,15 +126,11 @@ def main():
     )
     _LOGGER.info(f"FSDP architecture: {model}")
 
-    wrapper_fn = {
-        "checkpoint": checkpoint_wrapper,
-        "offload": offload_wrapper,
-        "in-memory": None,
-    }[args.activations]
-    if wrapper_fn is not None:
-        apply_activation_checkpointing(
-            model, checkpoint_wrapper_fn=wrapper_fn, auto_wrap_policy=wrap_policy
-        )
+    # Applying gradient checkpointing - note that only the LlamaDecoderLayer supports this,
+    # so we can just reuse our existing wrap_policy.
+    apply_activation_checkpointing(
+        model, checkpoint_wrapper_fn=checkpoint_wrapper, auto_wrap_policy=wrap_policy
+    )
 
     # NOTE: since this can download data, make sure to do the main process first
     # NOTE: This assumes that the data is on a **shared** network drive, accessible to all processes
@@ -439,13 +434,8 @@ def _get_parser() -> argparse.ArgumentParser:
     parser.add_argument("--cpu-offload", default="on", choices=["on", "off"])
     parser.add_argument(
         "--bwd-prefetch",
-        default="off",
+        default="BACKWARD_PRE",
         choices=["BACKWARD_PRE", "BACKWARD_POST", "off"],
-    )
-    parser.add_argument(
-        "--activations",
-        default="checkpoint",
-        choices=["offload", "checkpoint", "in-memory"],
     )
     parser.add_argument("--seq-length", default=None, type=int)
     return parser
