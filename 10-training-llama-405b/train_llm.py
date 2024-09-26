@@ -83,13 +83,13 @@ def main():
     config = AutoConfig.from_pretrained(args.model_name, use_cache=False)
     tokenizer = AutoTokenizer.from_pretrained(args.model_name)
     if rank == 0:
-        model = AutoModelForCausalLM.from_pretrained(
-            args.model_name,
-            torch_dtype=dtype,
-            device_map="cpu",
-            attn_implementation="flash_attention_2",
-            use_cache=False,
-        )
+        with torch.device("cpu"):
+            model = AutoModelForCausalLM.from_pretrained(
+                args.model_name,
+                torch_dtype=dtype,
+                attn_implementation="flash_attention_2",
+                use_cache=False,
+            )
     else:
         with torch.device("meta"):
             model = AutoModelForCausalLM.from_config(config, torch_dtype=dtype)

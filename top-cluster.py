@@ -23,7 +23,11 @@ while True:
                 host,
                 "nvidia-smi",
                 "--query-gpu=utilization.gpu,power.draw,power.limit,memory.used,memory.total",
-                "--format=csv",
+                "--format=csv,noheader,nounits",
+                "&&",
+                "nvidia-smi",
+                "--query-compute-apps=pid",
+                "--format=csv,noheader,nounits",
             ],
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
@@ -37,20 +41,22 @@ while True:
 
     gpu_stats = {}
     node_stats = {
-        host: dict(util=0, power_usage=0, memory_usage=0, num_gpus=0) for host in hosts
+        host: dict(util=0, power_usage=0, memory_usage=0, num_gpus=0, num_procs=0)
+        for host in hosts
     }
     cluster_stats = dict(util=0, power_usage=0, memory_usage=0, num_gpus=0)
     for host, output in zip(hosts, outputs):
         gpu_stats[host] = {}
-        for gpu, stats in enumerate(output.splitlines()[1:]):
-            util, power_draw, power_limit, memory_used, memory_total = stats.split(", ")
-            util = float(util.split()[0])
-            power_usage = (
-                100 * float(power_draw.split()[0]) / float(power_limit.split()[0])
+        for gpu, stats in enumerate(output.splitlines()):
+            if "," not in stats:
+                node_stats[host]["num_procs"] += 1
+                continue
+
+            util, power_draw, power_limit, memory_used, memory_total = map(
+                float, stats.split(", ")
             )
-            memory_usage = (
-                100 * float(memory_used.split()[0]) / float(memory_total.split()[0])
-            )
+            power_usage = 100 * power_draw / power_limit
+            memory_usage = 100 * memory_used / memory_total
 
             gpu_stats[host][gpu] = dict(
                 util=util, power_usage=power_usage, memory_usage=memory_usage

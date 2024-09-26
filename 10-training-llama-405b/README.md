@@ -31,7 +31,7 @@ Node local storage is **vastly** faster. For some numbers, while running this sc
 There's a download script in this repo for utility, run this on node 0:
 
 ```bash
-cd distributed-training-guide/10-finetuning-llama-405b
+cd distributed-training-guide/10-training-llama-405b
 python download.py
 ```
 
@@ -47,7 +47,8 @@ We can't actually use device_map "auto", because this will fully utilize the ran
 
 ```python
 if rank == 0:
-    model = AutoModelForCausalLM.from_pretrained(..., device_map="cpu")
+    with torch.device("cpu"):
+        model = AutoModelForCausalLM.from_pretrained(...)
 else:
     with torch.device("meta"):
         model = AutoModelForCausalLM.from_config(config, torch_dtype=dtype)
@@ -92,7 +93,7 @@ apply_activation_checkpointing(
 We provide a customized launch.sh script here based on the bash command for spawning torchrun on all available nodes:
 
 ```bash
-cd distributed-training-guide/10-finetuning-llama-405b
+cd distributed-training-guide/10-training-llama-405b
 bash launch.sh # NOTE: this is non blocking
 ```
 
