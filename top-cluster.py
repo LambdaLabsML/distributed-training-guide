@@ -1,6 +1,7 @@
 import argparse
 import subprocess
 import time
+import datetime
 
 parser = argparse.ArgumentParser()
 parser.add_argument(
@@ -73,7 +74,7 @@ while True:
 
     max_host_length = max(map(len, hosts))
 
-    print("===")
+    print(f"==={datetime.datetime.now()}")
     print(f"{'name':>10}\t{'util':>10}\t{'power':>10}\t{'memory':>10}")
     print(
         f"{'cluster':>10}\t{cluster_stats['util']:>9.1f}%\t{cluster_stats['power_usage']:>9.1f}%\t{cluster_stats['memory_usage']:>9.1f}%"

@@ -292,9 +292,10 @@ def main():
                     f"epoch": state["epoch"],
                     f"epoch_progress": state["epoch_step"] / len(dataloader),
                     f"num_batches_remaining": len(dataloader) - i_step,
-                    f"curr_memory_in_gb": 1e-9 * mem["allocated_bytes.all.current"],
-                    f"rsvd_memory_in_gb": 1e-9 * mem["reserved_bytes.all.current"],
-                    f"peak_memory_in_gb": 1e-9 * mem["allocated_bytes.all.peak"],
+                    f"curr_alloc_in_gb": 1e-9 * mem["allocated_bytes.all.current"],
+                    f"peak_allo_in_gb": 1e-9 * mem["allocated_bytes.all.peak"],
+                    f"curr_resv_in_gb": 1e-9 * mem["reserved_bytes.all.current"],
+                    f"peak_resv_in_gb": 1e-9 * mem["reserved_bytes.all.peak"],
                     f"time/total": sum(t.avg_elapsed_ms() for t in timers.values()),
                     **{
                         f"time/{k}": timer.avg_elapsed_ms()
