@@ -103,10 +103,12 @@ def main():
         f"Before FSDP: {(mem['allocated_bytes.all.current'] + mem['reserved_bytes.all.current']) * 1e-9}gb used"
     )
 
+    from torch.nn import Embedding
     from transformers.models.llama.modeling_llama import LlamaDecoderLayer
 
     wrap_policy = functools.partial(
-        transformer_auto_wrap_policy, transformer_layer_cls={LlamaDecoderLayer}
+        transformer_auto_wrap_policy,
+        transformer_layer_cls={LlamaDecoderLayer, Embedding},
     )
     model = FullyShardedDataParallel(
         model,

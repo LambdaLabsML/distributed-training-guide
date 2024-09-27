@@ -56,18 +56,18 @@ else:
 
 Then later, sync_module_states in FSDP constructor will make sure the weights are broadcasted from rank 0 to the other ranks.
 
-## Sharding the LlamaDecoderLayer
+## Sharding Llama 405b
 
-Here we are just going to be sharding the LlamaDecoderLayer (there's 191 of them). We can use the `transformer_auto_wrap_policy` to target the specific class for that layer:
+Most of the tutorials on training Llama 405b just shard the LlamaDecoderLayer (there's 191 of them). However during testing I also found that sharding the nn.Embedding layer at the beginning of the network improved throughput and reduced memory usage. We can use the `transformer_auto_wrap_policy` to target the specific class for those layer:
 
 ```python
 from torch.distributed.fsdp.wrap import transformer_auto_wrap_policy
 from transformers.models.llama.modeling_llama import LlamaDecoderLayer
 
 wrap_policy = functools.partial(
-    transformer_auto_wrap_policy, transformer_layer_cls={LlamaDecoderLayer}
+    transformer_auto_wrap_policy,
+    transformer_layer_cls={LlamaDecoderLayer, nn.Embedding},
 )
-
 FSDP(..., auto_wrap_policy=wrap_policy)
 ```
 
@@ -112,6 +112,14 @@ When we are using CPUOffload though, the memory we are keeping is just on the CP
 optimizer.zero_grad(set_to_none=args.cpu_offload == "off")
 ```
 
+## Forward Prefetch
+
+TODO
+
+## Not Limiting All Gathers
+
+TODO
+
 ## Launch command
 
 We provide a customized launch.sh script here based on the bash command for spawning torchrun on all available nodes:
@@ -146,3 +154,8 @@ python ../top-cluster.py hosts
 ### Memory Usage
 
 ### Throughput
+
+Base - 5.1s per iter
+nn.Embedding in wrap policy - 4.1s per iter
+forward_prefetch=True - ???
+limit_all_gathers=False - ???
