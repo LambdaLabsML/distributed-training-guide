@@ -1,4 +1,4 @@
-# Training a 405b model
+# Training a 405B model
 
 Here we are going to utilize a huge cluster to train Llama 3.1 405B. **This does not utilize LORA!** We are actually fully training the weights of a 405b model in plain pytorch.
 
@@ -56,9 +56,9 @@ else:
 
 Then later, sync_module_states in FSDP constructor will make sure the weights are broadcasted from rank 0 to the other ranks.
 
-## Sharding Llama 405b
+## Sharding Llama 405B
 
-Most of the tutorials on training Llama 405b just shard the LlamaDecoderLayer (there's 191 of them). However during testing I also found that sharding the nn.Embedding layer at the beginning of the network improved throughput and reduced memory usage. We can use the `transformer_auto_wrap_policy` to target the specific class for those layer:
+Most of the tutorials on training Llama 405b just shard the `LlamaDecoderLayer` (there's 191 of them). However during testing I also found that sharding the `nn.Embedding` layer at the beginning of the network improved throughput and reduced memory usage. We can use the `transformer_auto_wrap_policy` to target the specific classes for those layers:
 
 ```python
 from torch.distributed.fsdp.wrap import transformer_auto_wrap_policy
@@ -154,8 +154,3 @@ python ../top-cluster.py hosts
 ### Memory Usage
 
 ### Throughput
-
-Base - 5.1s per iter
-nn.Embedding in wrap policy - 4.1s per iter
-forward_prefetch=True - ???
-limit_all_gathers=False - ???

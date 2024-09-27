@@ -92,7 +92,11 @@ def main():
             )
     else:
         with torch.device("meta"):
-            model = AutoModelForCausalLM.from_config(config, torch_dtype=dtype)
+            model = AutoModelForCausalLM.from_config(
+                config,
+                torch_dtype=dtype,
+                attn_implementation="flash_attention_2",
+            )
 
     embedding_size = model.get_input_embeddings().weight.shape[0]
     if len(tokenizer) > embedding_size:
@@ -119,7 +123,6 @@ def main():
         auto_wrap_policy=wrap_policy,
         sharding_strategy=ShardingStrategy.FULL_SHARD,
         cpu_offload=CPUOffload(offload_params=args.cpu_offload == "on"),
-        backward_prefetch=getattr(BackwardPrefetch, args.bwd_prefetch, None),
     )
 
     mem = torch.cuda.memory_stats(device)
@@ -409,11 +412,6 @@ def _get_parser() -> argparse.ArgumentParser:
     parser.add_argument("--ckpt-freq", default=500, type=int)
     parser.add_argument("--dataset-cache-root", default="../.cache")
     parser.add_argument("--cpu-offload", default="on", choices=["on", "off"])
-    parser.add_argument(
-        "--bwd-prefetch",
-        default="BACKWARD_PRE",
-        choices=["BACKWARD_PRE", "BACKWARD_POST", "off"],
-    )
     parser.add_argument("--seq-length", default=None, type=int)
     return parser
 
