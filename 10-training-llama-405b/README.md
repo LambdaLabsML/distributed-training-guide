@@ -88,6 +88,30 @@ apply_activation_checkpointing(
 )
 ```
 
+## fused Optimizer implementation
+
+When using CPUOffload feature of FSDP, the optimizer entirely runs on the CPU. This is because there is significant cost to transfer data to and from the GPU when doing optimizer.step(). At the time of this being written there are open issues on how to overlap the optimizer.step() with the next forward() call.
+
+By default the optimizers will use a per tensor forward call on the cpu, but there are flags you can enable to get a bit of a speedup:
+
+```python
+torch.optim.AdamW(model.parameters(), lr=args.lr, fused=True)
+```
+
+## zero_grad(set_to_none=???)
+
+You may have seen this set_to_none argument in [optimizer.zero_grad()](https://pytorch.org/docs/stable/generated/torch.optim.Optimizer.zero_grad.html). According to the docs:
+
+> This will in general have lower memory footprint, and can modestly improve performance.
+
+Basically set_to_none=True will deallocate the gradients after they are used. In cases where we aren't memory constrained, keeping the gradients around (and reducing the amout of allocations) is a good thing for performance. However when we are memory constrained, setting to none gives us more memory to use.
+
+When we are using CPUOffload though, the memory we are keeping is just on the CPU. So there isn't really a GPU memory cost to keeping them around!
+
+```python
+optimizer.zero_grad(set_to_none=args.cpu_offload == "off")
+```
+
 ## Launch command
 
 We provide a customized launch.sh script here based on the bash command for spawning torchrun on all available nodes:
@@ -106,12 +130,14 @@ You can change the hostnames in the `hosts` file in this directory.
 The log files are really useful for monitoring the progress of everything. Here's a bash command for tailing all of them at once:
 
 ```bash
+cd distributed-training-guide/10-training-llama-405b
 find ../logs/ -name \*stderr.log | xargs tail -f
 ```
 
 Additionally, we have a top like utility script for monitoring the entire cluster at the top level of this directory:
 
 ```bash
+cd distributed-training-guide/10-training-llama-405b
 python ../top-cluster.py hosts
 ```
 

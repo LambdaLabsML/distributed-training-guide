@@ -149,7 +149,7 @@ def main():
     )
     _LOGGER.info(f"{len(dataloader)} batches per epoch")
 
-    optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, fused=True)
     lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
         optimizer, T_max=1000, eta_min=args.lr * 1e-2
     )
@@ -219,10 +219,7 @@ def main():
             },
         )
 
-    timers = {
-        k: LocalTimer(device)
-        for k in ["data", "forward", "backward", "update", "waiting"]
-    }
+    timers = {k: LocalTimer(device) for k in ["data", "forward", "backward", "update"]}
 
     for state["epoch"] in range(state["epoch"], args.num_epochs):
         _LOGGER.info(f"Begin epoch {state['epoch']} at step {state['epoch_step']}")
@@ -242,38 +239,16 @@ def main():
                 # NOTE: for resuming
                 continue
 
-            _LOGGER.info(f"{rank=} {i_step=} data sent to device")
-
-            with timers["waiting"]:
-                dist.barrier()
-
             with timers["forward"]:
                 outputs = model(**batch)
 
-            _LOGGER.info(f"{rank=} {i_step=} forward() finished")
-
-            with timers["waiting"]:
-                dist.barrier()
-
             with timers["backward"]:
                 outputs.loss.backward()
-                _LOGGER.info(f"{rank=} {i_step=} backward() finished")
-
-            with timers["waiting"]:
-                dist.barrier()
 
             with timers["update"]:
                 optimizer.step()
-                _LOGGER.info(f"{rank=} {i_step=} optimizer.step() finished")
-
                 lr_scheduler.step()
-                _LOGGER.info(f"{rank=} {i_step=} lr_scheduler.step() finished")
-
-                optimizer.zero_grad(set_to_none=True)
-                _LOGGER.info(f"{rank=} {i_step=} optimizer.zero_grad() finished")
-
-            with timers["waiting"]:
-                dist.barrier()
+                optimizer.zero_grad(set_to_none=args.cpu_offload == "off")
 
             state["global_step"] += 1
             state["epoch_step"] += 1
