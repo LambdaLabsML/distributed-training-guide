@@ -45,7 +45,7 @@ index 3130381..d5cb05c 100644
 --- a/02-multi-gpu/train_llm.py
 +++ b/03-multi-node/train_llm.py
 @@ -49,12 +49,12 @@ def main():
-     dist.init_process_group(backend="nccl" if dist.is_nccl_available() else "mpi")
+     dist.init_process_group()
  
      rank = dist.get_rank()
 +    local_rank = rank % torch.cuda.device_count()

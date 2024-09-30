@@ -67,10 +67,8 @@ Two main differences here:
      numpy.random.seed(args.seed)
      random.seed(args.seed)
  
--    dist.init_process_group(backend="nccl" if dist.is_nccl_available() else "mpi")
-+    deepspeed.init_distributed(
-+        dist_backend="nccl" if dist.is_nccl_available() else "mpi"
-+    )
+-    dist.init_process_group()
++    deepspeed.init_distributed()
  
      rank = dist.get_rank()
 -    local_rank = rank % torch.cuda.device_count()

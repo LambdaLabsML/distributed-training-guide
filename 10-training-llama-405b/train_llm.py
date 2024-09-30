@@ -55,7 +55,7 @@ def main():
     parser = _get_parser()
     args = parser.parse_args()
 
-    dist.init_process_group(backend="nccl" if dist.is_nccl_available() else "mpi")
+    dist.init_process_group()
 
     rank = dist.get_rank()
     local_rank = rank % torch.cuda.device_count()

@@ -43,7 +43,7 @@ def main():
     numpy.random.seed(args.seed)
     random.seed(args.seed)
 
-    dist.init_process_group(backend="nccl" if dist.is_nccl_available() else "mpi")
+    dist.init_process_group()
 
     rank = dist.get_rank()
     world_size = dist.get_world_size()

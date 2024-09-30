@@ -47,7 +47,6 @@ def main():
     dist.init_process_group(
         rank=int(os.environ["OMPI_COMM_WORLD_RANK"]),
         world_size=int(os.environ["OMPI_COMM_WORLD_SIZE"]),
-        backend="nccl" if dist.is_nccl_available() else "mpi",
     )
 
     rank = dist.get_rank()

@@ -42,9 +42,7 @@ def main():
     numpy.random.seed(args.seed)
     random.seed(args.seed)
 
-    deepspeed.init_distributed(
-        dist_backend="nccl" if dist.is_nccl_available() else "mpi"
-    )
+    deepspeed.init_distributed()
 
     rank = dist.get_rank()
     if args.local_rank is not None:

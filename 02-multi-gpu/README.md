@@ -135,7 +135,7 @@ Note that we are now:
      random.seed(args.seed)
  
 -    device = torch.device("cuda")
-+    dist.init_process_group(backend="nccl" if dist.is_nccl_available() else "mpi")
++    dist.init_process_group()
 +
 +    rank = dist.get_rank()
 +    world_size = dist.get_world_size()
