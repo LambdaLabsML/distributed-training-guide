@@ -68,14 +68,14 @@ def main():
     _LOGGER.info(args)
     _LOGGER.info(f"local_rank={local_rank} rank={rank} world size={world_size}")
 
-    torch.manual_seed(args.seed)
-    torch.cuda.manual_seed_all(args.seed)
-    numpy.random.seed(args.seed)
-    random.seed(args.seed)
-
     device = torch.device(f"cuda:{local_rank}")
     dtype = torch.bfloat16
     torch.cuda.set_device(device)
+
+    torch.manual_seed(args.seed)
+    torch.cuda.manual_seed(args.seed)
+    numpy.random.seed(args.seed)
+    random.seed(args.seed)
 
     _LOGGER.info(f"Loading model from HF_HOME={os.environ['HF_HOME']}")
 

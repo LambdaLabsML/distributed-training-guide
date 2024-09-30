@@ -56,6 +56,11 @@ def main():
     dtype = torch.bfloat16
     torch.cuda.set_device(device)
 
+    torch.manual_seed(args.seed)
+    torch.cuda.manual_seed(args.seed)
+    numpy.random.seed(args.seed)
+    random.seed(args.seed)
+
     with rank0_first():
         config = AutoConfig.from_pretrained(args.model_name, use_cache=False)
         model = AutoModelForCausalLM.from_config(config, torch_dtype=dtype).to(device)

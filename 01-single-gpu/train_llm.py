@@ -36,13 +36,13 @@ def main():
     _LOGGER.info(os.environ)
     _LOGGER.info(args)
 
-    torch.manual_seed(args.seed)
-    torch.cuda.manual_seed_all(args.seed)
-    numpy.random.seed(args.seed)
-    random.seed(args.seed)
-
     device = torch.device("cuda")
     dtype = torch.bfloat16
+
+    torch.manual_seed(args.seed)
+    torch.cuda.manual_seed(args.seed)
+    numpy.random.seed(args.seed)
+    random.seed(args.seed)
 
     config = AutoConfig.from_pretrained(args.model_name, use_cache=False)
     model = AutoModelForCausalLM.from_config(config, torch_dtype=dtype).to(device)
