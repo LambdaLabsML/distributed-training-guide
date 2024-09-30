@@ -37,24 +37,9 @@ Notes:
 - We use `$(which python)` to get the absolute path of our python interpreter - if you are launch from a head node instead of a worker node, you'll need to change this.
 
 ```diff
-@@ -6,6 +6,7 @@ import random
- import time
- from pathlib import Path
- import logging
-+import os
- 
- import torch
- from torch.utils.data import DataLoader
-@@ -42,7 +43,11 @@ def main():
-     numpy.random.seed(args.seed)
-     random.seed(args.seed)
- 
 -    dist.init_process_group()
 +    dist.init_process_group(
 +        rank=int(os.environ["OMPI_COMM_WORLD_RANK"]),
 +        world_size=int(os.environ["OMPI_COMM_WORLD_SIZE"]),
 +    )
- 
-     rank = dist.get_rank()
-     local_rank = rank % torch.cuda.device_count()
 ```

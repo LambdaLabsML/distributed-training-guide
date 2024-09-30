@@ -109,9 +109,7 @@ When one of the workers (including a thread from a worker process) has an error,
 
 You also need to add a `@record` (imported `from torch.distributed.elastic.multiprocessing.errors import record`) annotation to your main function:
 
-```diff --git a/01-single-gpu/train_llm.py b/02-multi-gpu/train_llm.py
---- a/01-single-gpu/train_llm.py
-+++ b/02-multi-gpu/train_llm.py
+```diff
 +@record
  def main():
 ```

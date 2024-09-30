@@ -7,10 +7,10 @@ Hanging and deadlocks can be caused by so many things, even your own code! Here'
 Use [py-spy](https://github.com/benfred/py-spy) to get a dump of stacktraces from all python threads in a running python program. Here's how you get a dump from each worker:
 
 ```
-py-spy dump --locals --pid <PID of the torchrun process>
+sudo env "PATH=$PATH" py-spy dump --locals --pid <PID of the torchrun process>
 ```
 
-Note that you have to run this on each node & for each worker you want a dump on.
+Another useful command is `py-spy top --pid <>`, which allows you to watch what is going on in a python process.
 
 ## Recording errors
 
@@ -33,7 +33,7 @@ Luckily all the code in this guide has been doing this, and so should you! **Mak
 
 `GPU Power Usage` will be the main one - if the training process is hanging, then the power usage will drop to around ~10% for all workers:
 
-```
+```bash
 nvidia-smi --query-gpu=power.draw,power.limit --format=csv,noheader
 ```
 
@@ -48,6 +48,8 @@ Will output something like this: (note this is with nothing running)
 70.80 W, 700.00 W
 70.87 W, 700.00 W
 ```
+
+You can use the `top-cluster.py` script at the top level of the repo for monitoring things like this.
 
 ## Checklist for system problems
 
