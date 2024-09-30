@@ -70,9 +70,6 @@ def main():
     dtype = torch.bfloat16
     torch.cuda.set_device(device)
 
-    def _load_to_device(p):
-        return torch.load(p, map_location=device, weights_only=True)
-
     with rank0_first():
         config = AutoConfig.from_pretrained(args.model_name, use_cache=False)
         tokenizer = AutoTokenizer.from_pretrained(args.model_name)
@@ -169,7 +166,11 @@ def main():
             optim_state_dict=sharded_optimizer_state,
             options=ckpt_opts,
         )
-        lr_scheduler.load_state_dict(_load_to_device(exp_dir / "lr_scheduler.pt"))
+        lr_scheduler.load_state_dict(
+            torch.load(
+                exp_dir / "lr_scheduler.pt", map_location=device, weights_only=True
+            )
+        )
         with open(exp_dir / "state.json") as fp:
             state = json.load(fp)
         resumed = True

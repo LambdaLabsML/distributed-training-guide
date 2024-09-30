@@ -59,9 +59,6 @@ def main():
     dtype = torch.bfloat16
     torch.cuda.set_device(device)
 
-    def _load_to_device(p):
-        return torch.load(p, map_location=device, weights_only=True)
-
     with rank0_first():
         config = AutoConfig.from_pretrained(args.model_name, use_cache=False)
         model = AutoModelForCausalLM.from_config(config, torch_dtype=dtype).to(device)
@@ -106,6 +103,10 @@ def main():
     }
     resumed = False
     if (exp_dir / "state.json").exists():
+
+        def _load_to_device(p):
+            return torch.load(p, map_location=device, weights_only=True)
+
         model.load_state_dict(_load_to_device(exp_dir / "model.pt"))
         optimizer.load_state_dict(_load_to_device(exp_dir / "optimizer.pt"))
         lr_scheduler.load_state_dict(_load_to_device(exp_dir / "lr_scheduler.pt"))
