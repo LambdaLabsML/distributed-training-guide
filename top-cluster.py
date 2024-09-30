@@ -7,13 +7,11 @@ parser = argparse.ArgumentParser()
 parser.add_argument(
     "--poll-freq", default=1000, type=int, help="Frequency (in ms) to poll clusters"
 )
-parser.add_argument("hosts", help="File containing hostnames")
+parser.add_argument("hosts", help="File containing hostnames separated by newlines")
 args = parser.parse_args()
 
 with open(args.hosts) as fp:
-    hosts = []
-    for line in fp:
-        hosts.append(line.strip())
+    hosts = list(filter(None, map(str.strip, fp.readlines())))
 
 while True:
     procs = [

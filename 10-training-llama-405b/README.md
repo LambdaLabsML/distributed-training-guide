@@ -112,14 +112,6 @@ When we are using CPUOffload though, the memory we are keeping is just on the CP
 optimizer.zero_grad(set_to_none=args.cpu_offload == "off")
 ```
 
-## Forward Prefetch
-
-TODO
-
-## Not Limiting All Gathers
-
-TODO
-
 ## Launch command
 
 We provide a customized launch.sh script here based on the bash command for spawning torchrun on all available nodes:
@@ -151,6 +143,25 @@ python ../top-cluster.py hosts
 
 ## Run statistics
 
-### Memory Usage
+Running this with 64 H100 gpus (8 separate nodes) has the following stats:
 
-### Throughput
+- ~30s per iteration (data/forward/backward/update). Breakdown is
+  - data: ~2ms
+  - forward: ~7s
+  - backward: ~19s
+  - update: ~4s
+- Peak Memory Allocated: 52.9GB
+- Peak Memory Reserved: 77.9GB
+
+Noting that reserved memory has to do with pytorch allocation caching.
+
+## Other notes on settings that didn't affect throughput
+
+- Allowing tf32 had no impact on throughput (`torch.backends.cudnn.allow_tf32` and `torch.backends.cuda.matmul.allow_tf32`) 
+- Enabling benchmarking had no impact on throughput (`torch.backends.cudnn.benchmark = True`)
+- Using CuDNN sdpa was slower (`attn_implementation="sdpa"` and `torch.backends.cuda.enable_cudnn_sdp(True)`)
+- torch.compile had no impact (`use_orig_params=True` and `torch.compile` after FSDP constructor)
+- Very minimal testing of NCCL environment variables either made things worse or had no impact (https://docs.nvidia.com/deeplearning/nccl/user-guide/docs/env.html)
+- `PYTORCH_NO_CUDA_MEMORY_CACHING=1` made enough memory available that `--batch-size 2` or higher sequence lengths were possible, but it was much much slower.
+  - It's possible that some well placed calls to `torch.cuda.empty_cache()` could achieve this without the throughput loss.
+- Only `FULL_SHARD` works. Others fail silently.

@@ -11,10 +11,10 @@ xargs \
     -a hosts \
     -I {} \
     ssh {} \
-    tmux new-session -d -s torchrun-{} -c $(pwd) \
+    tmux new-session -d -s torchrun-${EXPERIMENT_NAME} -c $(pwd) \
     -e HF_HOME=/home/ubuntu/.cache/huggingface \
     -e TORCHELASTIC_ERROR_FILE=../error.json \
-    -e OMP_NUM_THREADS=1 \
+    -e OMP_NUM_THREADS=26 \
     $(which python) -m torch.distributed.run \
     --rdzv-id ${EXPERIMENT_NAME} \
     --rdzv-backend c10d \
