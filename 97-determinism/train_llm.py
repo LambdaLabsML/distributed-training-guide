@@ -3,6 +3,7 @@ from contextlib import contextmanager
 from itertools import chain
 import json
 import multiprocessing
+import os
 import random
 import time
 from pathlib import Path
@@ -31,19 +32,8 @@ _LOGGER = logging.getLogger(__name__)
 
 @record
 def main():
-    logging.basicConfig(level=logging.INFO)
-
     parser = _get_parser()
     args = parser.parse_args()
-
-    _LOGGER.info(args)
-
-    torch.use_deterministic_algorithms(True)
-
-    torch.manual_seed(args.seed)
-    torch.cuda.manual_seed_all(args.seed)
-    numpy.random.seed(args.seed)
-    random.seed(args.seed)
 
     dist.init_process_group()
 
@@ -51,6 +41,13 @@ def main():
     local_rank = rank % torch.cuda.device_count()
     world_size = dist.get_world_size()
 
+    logging.basicConfig(
+        format=f"[rank={rank}] [%(asctime)s] %(levelname)s:%(message)s",
+        level=logging.INFO,
+    )
+
+    _LOGGER.info(os.environ)
+    _LOGGER.info(args)
     _LOGGER.info(f"local_rank={local_rank} rank={rank} world size={world_size}")
 
     device = torch.device(f"cuda:{local_rank}")
@@ -74,7 +71,7 @@ def main():
     # NOTE: This assumes that the data is on a **shared** network drive, accessible to all processes
     with rank0_first():
         train_data = _load_and_preprocess_data(args, tokenizer, config)
-    _LOGGER.info(f"[{rank}] {len(train_data)} training samples")
+    _LOGGER.info(f"{len(train_data)} training samples")
 
     g = torch.Generator()
     g.manual_seed(args.seed)
@@ -88,7 +85,7 @@ def main():
         worker_init_fn=_seed_worker,
         generator=g,
     )
-    _LOGGER.info(f"[{rank}] {len(dataloader)} batches per epoch")
+    _LOGGER.info(f"{len(dataloader)} batches per epoch")
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr)
     lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
@@ -124,7 +121,7 @@ def main():
         torch.set_rng_state(rng_state["torch"])
         torch.cuda.set_rng_state(rng_state["cuda"][local_rank], device)
         resumed = True
-    _LOGGER.info(f"[{rank}] Resumed={resumed} | {state}")
+    _LOGGER.info(f"Resumed={resumed} | {state}")
 
     dist.barrier()
     if rank == 0:
@@ -133,7 +130,7 @@ def main():
     dist.barrier()
 
     (exp_dir / f"rank-{rank}").mkdir(parents=True, exist_ok=True)
-    _LOGGER.info(f"[{rank}] Worker saving to {exp_dir / f'rank-{rank}'}")
+    _LOGGER.info(f"Worker saving to {exp_dir / f'rank-{rank}'}")
 
     wandb.init(
         project="distributed-training-guide",
@@ -157,9 +154,7 @@ def main():
     timers = {k: LocalTimer(device) for k in ["data", "forward", "backward", "update"]}
 
     for state["epoch"] in range(state["epoch"], args.num_epochs):
-        _LOGGER.info(
-            f"[{rank}] Begin epoch {state['epoch']} at step {state['epoch_step']}"
-        )
+        _LOGGER.info(f"Begin epoch {state['epoch']} at step {state['epoch_step']}")
 
         progress_bar = tqdm.tqdm(range(len(dataloader)), disable=rank > 0)
         if state["epoch_step"] > 0:

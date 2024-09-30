@@ -2,6 +2,7 @@ import argparse
 from contextlib import contextmanager
 from itertools import chain
 import multiprocessing
+import os
 import random
 import time
 from pathlib import Path
@@ -30,19 +31,10 @@ _LOGGER = logging.getLogger(__name__)
 
 @record
 def main():
-    logging.basicConfig(level=logging.INFO)
-
     parser = _get_parser()
     args = parser.parse_args()
 
-    _LOGGER.info(args)
-
-    torch.manual_seed(args.seed)
-    torch.cuda.manual_seed_all(args.seed)
-    numpy.random.seed(args.seed)
-    random.seed(args.seed)
-
-    deepspeed.init_distributed()
+    dist.init_process_group()
 
     rank = dist.get_rank()
     if args.local_rank is not None:
@@ -51,6 +43,13 @@ def main():
         local_rank = rank % torch.cuda.device_count()
     world_size = dist.get_world_size()
 
+    logging.basicConfig(
+        format=f"[rank={rank}] [%(asctime)s] %(levelname)s:%(message)s",
+        level=logging.INFO,
+    )
+
+    _LOGGER.info(os.environ)
+    _LOGGER.info(args)
     _LOGGER.info(f"local_rank={local_rank} rank={rank} world size={world_size}")
 
     device = torch.device(f"cuda:{local_rank}")
@@ -70,7 +69,7 @@ def main():
     # NOTE: This assumes that the data is on a **shared** network drive, accessible to all processes
     with rank0_first():
         train_data = _load_and_preprocess_data(args, tokenizer, config)
-    _LOGGER.info(f"[{rank}] {len(train_data)} training samples")
+    _LOGGER.info(f"{len(train_data)} training samples")
 
     model_engine: deepspeed.DeepSpeedEngine
     model_engine, _, _, lr_scheduler = deepspeed.initialize(
@@ -86,7 +85,7 @@ def main():
         # NOTE: this sampler will split dataset evenly across workers
         sampler=DistributedSampler(train_data, shuffle=True, drop_last=True),
     )
-    _LOGGER.info(f"[{rank}] {len(dataloader)} batches per epoch")
+    _LOGGER.info(f"{len(dataloader)} batches per epoch")
 
     exp_dir: Path = Path(args.save_dir) / args.experiment_name
 
@@ -101,7 +100,7 @@ def main():
     if (exp_dir / "pytorch_model.bin").exists():
         load_path, state = model_engine.load_checkpoint(exp_dir)
         resumed = load_path is not None
-    _LOGGER.info(f"[{rank}] Resumed={resumed} | {state}")
+    _LOGGER.info(f"Resumed={resumed} | {state}")
 
     dist.barrier()
     if rank == 0:
@@ -111,7 +110,7 @@ def main():
     dist.barrier()
 
     (exp_dir / f"rank-{rank}").mkdir(parents=True, exist_ok=True)
-    _LOGGER.info(f"[{rank}] Worker saving to {exp_dir / f'rank-{rank}'}")
+    _LOGGER.info(f"Worker saving to {exp_dir / f'rank-{rank}'}")
 
     wandb.init(
         project="distributed-training-guide",
@@ -135,9 +134,7 @@ def main():
     timers = {k: LocalTimer(device) for k in ["data", "forward", "backward", "update"]}
 
     for state["epoch"] in range(state["epoch"], args.num_epochs):
-        _LOGGER.info(
-            f"[{rank}] Begin epoch {state['epoch']} at step {state['epoch_step']}"
-        )
+        _LOGGER.info(f"Begin epoch {state['epoch']} at step {state['epoch_step']}")
 
         progress_bar = tqdm.tqdm(range(len(dataloader)), disable=rank > 0)
         if state["epoch_step"] > 0:

@@ -1,6 +1,5 @@
 import argparse
 from contextlib import contextmanager
-from datetime import timedelta
 import functools
 from itertools import chain
 import json
@@ -22,7 +21,6 @@ from torch.distributed.algorithms._checkpoint.checkpoint_wrapper import (
 from torch.distributed.elastic.multiprocessing.errors import record
 from torch.distributed.fsdp.fully_sharded_data_parallel import (
     FullyShardedDataParallel,
-    BackwardPrefetch,
     CPUOffload,
     ShardingStrategy,
 )
@@ -66,6 +64,7 @@ def main():
         level=logging.INFO,
     )
 
+    _LOGGER.info(os.environ)
     _LOGGER.info(args)
     _LOGGER.info(f"local_rank={local_rank} rank={rank} world size={world_size}")
 

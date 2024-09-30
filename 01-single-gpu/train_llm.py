@@ -2,6 +2,7 @@ import argparse
 from itertools import chain
 import json
 import multiprocessing
+import os
 import random
 import time
 from pathlib import Path
@@ -24,11 +25,15 @@ _LOGGER = logging.getLogger(__name__)
 
 
 def main():
-    logging.basicConfig(level=logging.INFO)
-
     parser = _get_parser()
     args = parser.parse_args()
 
+    logging.basicConfig(
+        format=f"[%(asctime)s] %(levelname)s:%(message)s",
+        level=logging.INFO,
+    )
+
+    _LOGGER.info(os.environ)
     _LOGGER.info(args)
 
     torch.manual_seed(args.seed)

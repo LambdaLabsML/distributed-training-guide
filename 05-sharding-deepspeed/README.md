@@ -90,7 +90,7 @@ Two main differences here:
 -
 @@ -89,9 +95,11 @@ def main():
      )
-     _LOGGER.info(f"[{rank}] {len(dataloader)} batches per epoch")
+     _LOGGER.info(f"{len(dataloader)} batches per epoch")
  
 -    optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr)
 -    lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
