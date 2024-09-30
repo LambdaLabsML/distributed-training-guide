@@ -186,11 +186,11 @@ def rank0_first():
 ```
 
 ```diff
--    config = AutoConfig.from_pretrained(args.model_name)
+-    config = AutoConfig.from_pretrained(args.model_name, use_cache=False)
 -    model = AutoModelForCausalLM.from_config(config, torch_dtype=dtype).to(device)
 -    tokenizer = AutoTokenizer.from_pretrained(args.model_name)
 +    with rank0_first():
-+        config = AutoConfig.from_pretrained(args.model_name)
++        config = AutoConfig.from_pretrained(args.model_name, use_cache=False)
 +        model = AutoModelForCausalLM.from_config(config, torch_dtype=dtype).to(device)
 +        tokenizer = AutoTokenizer.from_pretrained(args.model_name)
 ```

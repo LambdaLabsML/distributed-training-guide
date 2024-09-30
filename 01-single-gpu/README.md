@@ -23,11 +23,9 @@ This is a basic train from scratch script. Here are some quick facts:
 device = torch.device("cuda")
 dtype = torch.bfloat16
 
-config = AutoConfig.from_pretrained(args.model_name, trust_remote_code=True)
-model = AutoModelForCausalLM.from_config(config, trust_remote_code=True).to(
-    dtype=dtype, device=device
-)
-tokenizer = AutoTokenizer.from_pretrained(args.model_name, trust_remote_code=True)
+config = AutoConfig.from_pretrained(args.model_name, use_cache=False)
+model = AutoModelForCausalLM.from_config(config).to(dtype=dtype, device=device)
+tokenizer = AutoTokenizer.from_pretrained(args.model_name)
 ```
 
 2. We save checkpoints into `args.save_dir/args.experiment_name` - `--experiment-name is a **unique** run identifier

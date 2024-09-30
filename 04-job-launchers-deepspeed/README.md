@@ -26,7 +26,7 @@ index ae1c66f..d5671b3 100644
 +        local_rank = rank % torch.cuda.device_count()
      world_size = dist.get_world_size()
  
-     _LOGGER.info(f"local rank={local_rank} rank={rank} world size={world_size}")
+     _LOGGER.info(f"local_rank={local_rank} rank={rank} world size={world_size}")
 @@ -306,6 +309,7 @@ def _get_parser() -> argparse.ArgumentParser:
      parser.add_argument("--log-freq", default=100, type=int)
      parser.add_argument("--ckpt-freq", default=500, type=int)
