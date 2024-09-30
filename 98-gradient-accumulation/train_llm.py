@@ -176,7 +176,7 @@ def main():
                 if i_step % args.grad_accum == 0:
                     optimizer.step()
                     lr_scheduler.step()
-                    optimizer.zero_grad()
+                    optimizer.zero_grad(set_to_none=True)
 
             state["global_step"] += 1
             state["epoch_step"] += 1

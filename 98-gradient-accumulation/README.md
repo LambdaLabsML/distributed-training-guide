@@ -16,7 +16,7 @@ outputs.loss.backward()
 if i_step % grad_accum == 0:
     optimizer.step()
     lr_scheduler.step()
-    optimizer.zero_grad()
+    optimizer.zero_grad(set_to_none=True)
 ```
 
 ## DataDistributedParalell Implementation
@@ -34,7 +34,7 @@ with maybe_sync_grads():
 if i_step % grad_accum == 0:
     optimizer.step()
     lr_scheduler.step()
-    optimizer.zero_grad()
+    optimizer.zero_grad(set_to_none=True)
 ```
 
 ## Our final implementation
@@ -62,7 +62,7 @@ if i_step % grad_accum == 0:
                  outputs = model(**batch)
  
 -            with timers["backward"]:
--                optimizer.zero_grad()
+-                optimizer.zero_grad(set_to_none=True)
 +            with timers["backward"], maybe_sync_grads():
                  outputs.loss.backward()
  
@@ -72,5 +72,5 @@ if i_step % grad_accum == 0:
 +                if i_step % args.grad_accum == 0:
 +                    optimizer.step()
 +                    lr_scheduler.step()
-+                    optimizer.zero_grad()
++                    optimizer.zero_grad(set_to_none=True)
 ```

@@ -176,7 +176,7 @@ def main():
                 dist.barrier()
 
             with timers["backward"]:
-                optimizer.zero_grad()
+                optimizer.zero_grad(set_to_none=True)
                 outputs.loss.backward()
 
             with timers["waiting"]:

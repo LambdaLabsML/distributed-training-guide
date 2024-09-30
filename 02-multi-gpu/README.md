@@ -38,7 +38,7 @@ Now let's focus on our training loop. The canonical one in pytorch is:
 
 ```python
 loss = model(**batch)
-optimizer.zero_grad()
+optimizer.zero_grad(set_to_none=True)
 loss.backward()
 optimizer.step()
 ```

@@ -113,7 +113,7 @@ Here we are just going to be replacing our pytorch calls with deepspeed calls. N
 +                outputs = model_engine(**batch)
  
              with timers["backward"]:
--                optimizer.zero_grad()
+-                optimizer.zero_grad(set_to_none=True)
 -                outputs.loss.backward()
 +                model_engine.backward(outputs.loss)
  
