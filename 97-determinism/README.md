@@ -15,8 +15,7 @@ CUBLAS_WORKSPACE_CONFIG=:4096:8 TORCHELASTIC_ERROR_FILE=../error.json OMP_NUM_TH
     train_llm.py \
     --experiment-name multi-node \
     --dataset-name tatsu-lab/alpaca \
-    --model-name openai-community/gpt2 \
-    --batch-size 64
+    --model-name openai-community/gpt2
 ```
 
 Notably we are also saving & restoring the rng states from various libraries, and explicitly seeding the workers for data loading.

@@ -33,8 +33,7 @@ cat -n gpus | xargs -n2 \
     $(which python) train_llm.py \
     --experiment-name multi-node-tmux \
     --dataset-name tatsu-lab/alpaca \
-    --model-name openai-community/gpt2 \
-    --batch-size 64'
+    --model-name openai-community/gpt2'
 ```
 
 Here is how this command works:
@@ -89,6 +88,5 @@ xargs \
     train_llm.py \
     --experiment-name multi-node-tmux \
     --dataset-name tatsu-lab/alpaca \
-    --model-name openai-community/gpt2 \
-    --batch-size 64
+    --model-name openai-community/gpt2
 ```

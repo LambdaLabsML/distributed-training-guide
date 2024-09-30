@@ -9,8 +9,7 @@ cd distributed-training-guide/01-single-gpu
 python train_llm.py \
     --experiment-name gpt2-alpaca-single-gpu-$(date +%Y-%m-%dT%H-%M-%S) \
     --dataset-name tatsu-lab/alpaca \
-    --model-name openai-community/gpt2 \
-    --batch-size 64
+    --model-name openai-community/gpt2
 ```
 
 ## Notable Features

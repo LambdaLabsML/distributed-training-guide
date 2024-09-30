@@ -21,8 +21,7 @@ mpirun \
     $(which python) train_llm.py \
     --experiment-name mpi-multi-node \
     --dataset-name tatsu-lab/alpaca \
-    --model-name openai-community/gpt2 \
-    --batch-size 64
+    --model-name openai-community/gpt2
 ```
 
 Arguments:

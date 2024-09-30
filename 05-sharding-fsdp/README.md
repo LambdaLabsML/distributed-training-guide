@@ -273,7 +273,6 @@ TORCHELASTIC_ERROR_FILE=../error.json OMP_NUM_THREADS=1 torchrun --standalone \
     --experiment-name fsdp \
     --dataset-name tatsu-lab/alpaca \
     --model-name openai-community/gpt2 \
-    --batch-size 64 \
     --cpu-offload on
 ```
 

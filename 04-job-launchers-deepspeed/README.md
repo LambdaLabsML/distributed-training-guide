@@ -45,6 +45,5 @@ TORCHELASTIC_ERROR_FILE=../error.json OMP_NUM_THREADS=1 deepspeed \
     train_llm.py \
     --experiment-name deepspeed-multi-node \
     --dataset-name tatsu-lab/alpaca \
-    --model-name openai-community/gpt2 \
-    --batch-size 64
+    --model-name openai-community/gpt2
 ```

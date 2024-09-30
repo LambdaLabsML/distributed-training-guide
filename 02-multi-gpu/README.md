@@ -10,8 +10,7 @@ TORCHELASTIC_ERROR_FILE=../error.json OMP_NUM_THREADS=1 torchrun --standalone \
     train_llm.py \
     --experiment-name gpt2-alpaca-multi-gpu-$(date +%Y-%m-%dT%H-%M-%S) \
     --dataset-name tatsu-lab/alpaca \
-    --model-name openai-community/gpt2 \
-    --batch-size 64
+    --model-name openai-community/gpt2
 ```
 
 ## Dictionary
