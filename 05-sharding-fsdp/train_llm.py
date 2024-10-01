@@ -239,15 +239,16 @@ def main():
             if state["global_step"] % args.log_freq == 0:
                 mem = torch.cuda.memory_stats(device)
                 info = {
+                    "global_step": state["global_step"],
                     "lr": lr_scheduler.get_last_lr()[0],
                     "running_loss": state["running_loss"] / args.log_freq,
                     "epoch": state["epoch"],
                     "epoch_progress": state["epoch_step"] / len(dataloader),
                     "num_batches_remaining": len(dataloader) - i_step,
-                    f"curr_alloc_in_gb": 1e-9 * mem["allocated_bytes.all.current"],
-                    f"peak_alloc_in_gb": 1e-9 * mem["allocated_bytes.all.peak"],
-                    f"curr_resv_in_gb": 1e-9 * mem["reserved_bytes.all.current"],
-                    f"peak_resv_in_gb": 1e-9 * mem["reserved_bytes.all.peak"],
+                    "curr_alloc_in_gb": 1e-9 * mem["allocated_bytes.all.current"],
+                    "peak_alloc_in_gb": 1e-9 * mem["allocated_bytes.all.peak"],
+                    "curr_resv_in_gb": 1e-9 * mem["reserved_bytes.all.current"],
+                    "peak_resv_in_gb": 1e-9 * mem["reserved_bytes.all.peak"],
                     "time/total": sum(t.avg_elapsed_ms() for t in timers.values()),
                     **{
                         f"time/{k}": timer.avg_elapsed_ms()

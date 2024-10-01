@@ -173,6 +173,7 @@ def main():
 
             if state["global_step"] % args.log_freq == 0:
                 info = {
+                    "global_step": state["global_step"],
                     "lr": lr_scheduler.get_last_lr()[0],
                     "running_loss": state["running_loss"] / args.log_freq,
                     "epoch": state["epoch"],
