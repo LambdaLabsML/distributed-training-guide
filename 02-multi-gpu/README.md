@@ -1,5 +1,7 @@
 # Multi GPU on a single node
 
+NOTE: This chapter's code builds off of chapter 1.
+
 ```bash
 cd distributed-training-guide/02-multi-gpu
 TORCHELASTIC_ERROR_FILE=../error.json OMP_NUM_THREADS=1 torchrun --standalone \

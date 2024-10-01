@@ -1,5 +1,7 @@
 # Gradient Accumulation
 
+NOTE: This chapter's code builds off of chapter 3's code.
+
 Gradient accumulation is a way to increase the effective batch sizes of your model updates.
 
 It is normally applied when your model is so big that you use a lower batch size when running the forward/backward pass.

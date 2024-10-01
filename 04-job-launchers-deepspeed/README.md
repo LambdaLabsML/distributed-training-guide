@@ -2,6 +2,8 @@
 
 Since it is quite cumbersome to manually SSH into every node and start a training job, there are various ways to launch distributed training jobs from a single node.
 
+NOTE: This chapter's code builds off of chapter 3's code.
+
 ## deepspeed
 
 deepspeed is a distributed training library with many optimizations. We go into some of these optimizations in more detail in later chapters, but here we can just use the launcher included with it.

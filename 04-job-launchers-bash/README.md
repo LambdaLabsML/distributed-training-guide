@@ -2,6 +2,8 @@
 
 Since it is quite cumbersome to manually SSH into every node and start a training job, there are various ways to launch distributed training jobs from a single node.
 
+NOTE: This chapter's code is identical to chapter 3's code, so the command uses the training script from chapter 3.
+
 ## Bash Commands
 
 Since the main thing we need to do is spawn processes on other machines, we can combine a few bash tools together to achieve this. This approach is one of the most lightweight approaches for this, and makes it easy to edit the commands any way you want. While it takes a bit to understand how all the bash commands work together, they are generally applicable to other problems as well.
@@ -30,7 +32,7 @@ cat -n gpus | xargs -n2 \
     -e MASTER_PORT=5001 \
     -e WORLD_SIZE=$(wc -l < gpus) \
     -e RANK=$(($0 - 1)) \
-    $(which python) train_llm.py \
+    $(which python) ../03-multi-node/train_llm.py \
     --experiment-name multi-node-tmux \
     --dataset-name tatsu-lab/alpaca \
     --model-name openai-community/gpt2'
@@ -85,7 +87,7 @@ xargs \
     --nproc-per-node gpu \
     --redirects 3 \
     --log-dir ../logs \
-    train_llm.py \
+    ../03-multi-node/train_llm.py \
     --experiment-name multi-node-tmux \
     --dataset-name tatsu-lab/alpaca \
     --model-name openai-community/gpt2

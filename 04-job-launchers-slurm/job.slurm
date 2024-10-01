@@ -18,7 +18,7 @@ srun torchrun \
     --nproc-per-node ${SLURM_GPUS_ON_NODE} \
     --redirects 3 \
     --log-dir ${SLURM_SUBMIT_DIR}/logs \
-    train_llm.py \
+    ../03-multi-node/train_llm.py \
     --experiment-name gpt2-alpaca-slurm-$(date +%Y-%m-%dT%H-%M-%S) \
     --dataset-name tatsu-lab/alpaca \
     --model-name openai-community/gpt2

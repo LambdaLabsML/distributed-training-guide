@@ -2,6 +2,8 @@
 
 Since it is quite cumbersome to manually SSH into every node and start a training job, there are various ways to launch distributed training jobs from a single node.
 
+NOTE: This chapter's code builds off of chapter 3's code.
+
 ## mpirun
 
 There are two main flavors of MPI implementation, OpenMPI and MPICH. Either of them will work and we will use the OpenMPI implementation in this blog. You need to install OpenMPI.

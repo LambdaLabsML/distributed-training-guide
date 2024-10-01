@@ -1,5 +1,7 @@
 # Training a 405B model
 
+NOTE: This chapter's code builds off of chapter 5's FSDP code.
+
 Here we are going to utilize a huge cluster to train Llama 3.1 405B. **This does not utilize LORA!** We are actually fully training the weights of a 405b model in plain pytorch.
 
 ## Use flash attention

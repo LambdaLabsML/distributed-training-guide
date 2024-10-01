@@ -2,6 +2,8 @@
 
 Since it is quite cumbersome to manually SSH into every node and start a training job, there are various ways to launch distributed training jobs from a single node.
 
+NOTE: This chapter's code is identical to chapter 3's code, so we use chapter 3's training script in the commands.
+
 ## slurm
 
 slurm is a very popular job scheduling software often used with clusters.
@@ -43,9 +45,8 @@ srun torchrun \
     --nproc-per-node ${SLURM_GPUS_ON_NODE} \
     --redirects 3 \
     --log-dir ${SLURM_SUBMIT_DIR}/logs \
-    train_llm.py \
+    ../03-multi-node/train_llm.py \
     --experiment-name gpt2-alpaca-slurm-$(date +%Y-%m-%dT%H-%M-%S) \
     --dataset-name tatsu-lab/alpaca \
     --model-name openai-community/gpt2
-
 ```

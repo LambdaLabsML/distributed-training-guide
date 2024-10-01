@@ -1,6 +1,8 @@
 # Multi GPU across multiple nodes
 
-Run this command on **every** participating node
+NOTE: This chapter's code builds off of chapter 2.
+
+Run this command on **every** participating node.
 
 ```bash
 cd distributed-training-guide/03-multi-node

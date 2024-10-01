@@ -1,5 +1,7 @@
 # Optimizing Data Loading
 
+NOTE: This chapter's code builds off of chapter 3's code.
+
 An important part of achieving high throughput during distributed training is ensuring that all processes are moving at roughly the same speed. If one process is much faster, it will spend a lot of time waiting for the other processes to catch up. Data loading is actually a hugely important part of this.
 
 ## Motivating Example
