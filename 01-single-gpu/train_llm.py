@@ -3,14 +3,12 @@ from itertools import chain
 import json
 import multiprocessing
 import os
-import random
 import time
 from pathlib import Path
 import logging
 
 import torch
 from torch.utils.data import DataLoader
-import numpy
 import wandb
 import tqdm
 import datasets
@@ -40,9 +38,6 @@ def main():
     dtype = torch.bfloat16
 
     torch.manual_seed(args.seed)
-    torch.cuda.manual_seed(args.seed)
-    numpy.random.seed(args.seed)
-    random.seed(args.seed)
 
     config = AutoConfig.from_pretrained(args.model_name, use_cache=False)
     model = AutoModelForCausalLM.from_config(config, torch_dtype=dtype).to(device)

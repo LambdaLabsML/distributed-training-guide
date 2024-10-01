@@ -4,7 +4,6 @@ from itertools import chain
 import json
 import multiprocessing
 import os
-import random
 import time
 from pathlib import Path
 import logging
@@ -55,9 +54,6 @@ def main():
     torch.cuda.set_device(device)
 
     torch.manual_seed(args.seed)
-    torch.cuda.manual_seed(args.seed)
-    numpy.random.seed(args.seed)
-    random.seed(args.seed)
 
     with rank0_first():
         config = AutoConfig.from_pretrained(args.model_name, use_cache=False)

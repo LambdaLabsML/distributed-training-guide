@@ -5,7 +5,6 @@ from itertools import chain
 import json
 import multiprocessing
 import os
-import random
 import time
 from pathlib import Path
 import logging
@@ -34,7 +33,6 @@ from torch.distributed.checkpoint.state_dict_loader import load
 from torch.distributed.checkpoint.state_dict_saver import save
 
 
-import numpy
 import wandb
 import tqdm
 import datasets
@@ -73,9 +71,6 @@ def main():
     torch.cuda.set_device(device)
 
     torch.manual_seed(args.seed)
-    torch.cuda.manual_seed(args.seed)
-    numpy.random.seed(args.seed)
-    random.seed(args.seed)
 
     _LOGGER.info(f"Loading model from HF_HOME={os.environ['HF_HOME']}")
 

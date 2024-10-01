@@ -63,10 +63,7 @@ Two main differences here:
  import numpy
  import wandb
  import tqdm
-@@ -42,10 +43,15 @@ def main():
-     numpy.random.seed(args.seed)
-     random.seed(args.seed)
- 
+@@ -42,10 +43,15 @@ def main(): 
 -    dist.init_process_group()
 +    deepspeed.init_distributed()
  

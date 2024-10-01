@@ -128,10 +128,7 @@ Note that we are now:
 
 ```diff --git a/01-single-gpu/train_llm.py b/02-multi-gpu/train_llm.py
 --- a/01-single-gpu/train_llm.py
-+++ b/02-multi-gpu/train_llm.py
-     numpy.random.seed(args.seed)
-     random.seed(args.seed)
- 
++++ b/02-multi-gpu/train_llm.py 
 -    device = torch.device("cuda")
 +    dist.init_process_group()
 +

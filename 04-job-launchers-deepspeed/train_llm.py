@@ -4,7 +4,6 @@ from itertools import chain
 import json
 import multiprocessing
 import os
-import random
 import time
 from pathlib import Path
 import logging
@@ -16,7 +15,6 @@ from torch.nn.parallel import DistributedDataParallel
 from torch import distributed as dist
 from torch.distributed.elastic.multiprocessing.errors import record
 
-import numpy
 import wandb
 import tqdm
 import datasets
@@ -58,9 +56,6 @@ def main():
     torch.cuda.set_device(device)
 
     torch.manual_seed(args.seed)
-    torch.cuda.manual_seed(args.seed)
-    numpy.random.seed(args.seed)
-    random.seed(args.seed)
 
     with rank0_first():
         config = AutoConfig.from_pretrained(args.model_name, use_cache=False)
