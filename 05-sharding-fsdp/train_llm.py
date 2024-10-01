@@ -76,10 +76,6 @@ def main():
         with torch.device("meta"):
             model = AutoModelForCausalLM.from_config(config, torch_dtype=dtype)
 
-    embedding_size = model.get_input_embeddings().weight.shape[0]
-    if len(tokenizer) > embedding_size:
-        model.resize_token_embeddings(len(tokenizer))
-
     _LOGGER.info(
         f"Before FSDP: {torch.cuda.memory_stats(device)['allocated_bytes.all.current'] * 1e-9}gb allocated"
     )
@@ -242,25 +238,26 @@ def main():
 
             if state["global_step"] % args.log_freq == 0:
                 mem = torch.cuda.memory_stats(device)
-                wandb.log(
-                    {
-                        "lr": lr_scheduler.get_last_lr()[0],
-                        "running_loss": state["running_loss"] / args.log_freq,
-                        "epoch": state["epoch"],
-                        "epoch_progress": state["epoch_step"] / len(dataloader),
-                        "num_batches_remaining": len(dataloader) - i_step,
-                        f"curr_alloc_in_gb": 1e-9 * mem["allocated_bytes.all.current"],
-                        f"peak_alloc_in_gb": 1e-9 * mem["allocated_bytes.all.peak"],
-                        f"curr_resv_in_gb": 1e-9 * mem["reserved_bytes.all.current"],
-                        f"peak_resv_in_gb": 1e-9 * mem["reserved_bytes.all.peak"],
-                        "time/total": sum(t.avg_elapsed_ms() for t in timers.values()),
-                        **{
-                            f"time/{k}": timer.avg_elapsed_ms()
-                            for k, timer in timers.items()
-                        },
+                info = {
+                    "lr": lr_scheduler.get_last_lr()[0],
+                    "running_loss": state["running_loss"] / args.log_freq,
+                    "epoch": state["epoch"],
+                    "epoch_progress": state["epoch_step"] / len(dataloader),
+                    "num_batches_remaining": len(dataloader) - i_step,
+                    f"curr_alloc_in_gb": 1e-9 * mem["allocated_bytes.all.current"],
+                    f"peak_alloc_in_gb": 1e-9 * mem["allocated_bytes.all.peak"],
+                    f"curr_resv_in_gb": 1e-9 * mem["reserved_bytes.all.current"],
+                    f"peak_resv_in_gb": 1e-9 * mem["reserved_bytes.all.peak"],
+                    "time/total": sum(t.avg_elapsed_ms() for t in timers.values()),
+                    **{
+                        f"time/{k}": timer.avg_elapsed_ms()
+                        for k, timer in timers.items()
                     },
-                    step=state["global_step"],
-                )
+                }
+
+                _LOGGER.info(info)
+                wandb.log(info, step=state["global_step"])
+
                 torch.cuda.reset_peak_memory_stats(device)
                 state["running_loss"] = 0
                 for t in timers.values():
@@ -286,6 +283,10 @@ def main():
 
 
 def _load_and_preprocess_data(args, tokenizer, config):
+    """
+    Function created using code found in
+    https://github.com/huggingface/transformers/blob/v4.45.1/examples/pytorch/language-modeling/run_clm_no_trainer.py
+    """
     data = datasets.load_dataset(args.dataset_name, trust_remote_code=True)
 
     column_names = data["train"].column_names

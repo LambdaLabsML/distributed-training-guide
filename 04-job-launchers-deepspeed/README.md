@@ -13,27 +13,18 @@ deepspeed is a distributed training library with many optimizations. We go into 
 1. Install: `pip install deepspeed`
 2. Add `--local_rank` to cli parsing:
 
-```diff --git a/../03-multi-node/train_llm.py b/train_llm.py
-index ae1c66f..d5671b3 100644
---- a/../03-multi-node/train_llm.py
-+++ b/train_llm.py
-@@ -49,7 +49,10 @@ def main():
-     dist.init_process_group()
- 
-     rank = dist.get_rank()
--    local_rank = rank % torch.cuda.device_count()
-+    if args.local_rank is not None:
-+        local_rank = args.local_rank
-+    else:
-+        local_rank = rank % torch.cuda.device_count()
-     world_size = dist.get_world_size()
- 
-     _LOGGER.info(f"local_rank={local_rank} rank={rank} world size={world_size}")
-@@ -306,6 +309,7 @@ def _get_parser() -> argparse.ArgumentParser:
+```diff
      parser.add_argument("--log-freq", default=100, type=int)
      parser.add_argument("--ckpt-freq", default=500, type=int)
 +    parser.add_argument("--local_rank", type=int, default=None)
      return parser
+```
+
+3. Use it when initializing local_rank
+
+```diff
+-    local_rank = rank % torch.cuda.device_count()
++    local_rank = args.local_rank or (rank % torch.cuda.device_count())
 ```
 
 4. Launch

@@ -26,31 +26,33 @@ def main():
     parser = _get_parser()
     args = parser.parse_args()
 
+    # Will be modifying this in future version to include rank information
     logging.basicConfig(
         format=f"[%(asctime)s] %(levelname)s:%(message)s",
         level=logging.INFO,
     )
 
+    # Helpful to log this information when running on multiple nodes to make sure all nodes have the same environment.
     _LOGGER.info(os.environ)
     _LOGGER.info(args)
 
+    # This guide assumes CUDA device is available, and does all training in bf16
     device = torch.device("cuda")
     dtype = torch.bfloat16
 
+    # Seed pytorch's RNG. See https://pytorch.org/docs/stable/notes/randomness.html
     torch.manual_seed(args.seed)
 
+    # Note: Initializing an **untrained** model
     config = AutoConfig.from_pretrained(args.model_name, use_cache=False)
     model = AutoModelForCausalLM.from_config(config, torch_dtype=dtype).to(device)
     tokenizer = AutoTokenizer.from_pretrained(args.model_name)
-
-    embedding_size = model.get_input_embeddings().weight.shape[0]
-    if len(tokenizer) > embedding_size:
-        model.resize_token_embeddings(len(tokenizer))
 
     train_data = _load_and_preprocess_data(args, tokenizer, config)
 
     _LOGGER.info(f"{len(train_data)} training samples")
 
+    # Standard pytorch dataset iterator
     dataloader = DataLoader(
         train_data,
         batch_size=args.batch_size,
@@ -62,6 +64,8 @@ def main():
     _LOGGER.info(f"{len(dataloader)} batches per epoch")
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr)
+
+    # NOTE: T_max and eta_min were arbitrarily chosen
     lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
         optimizer, T_max=1000, eta_min=args.lr * 1e-2
     )
@@ -78,7 +82,7 @@ def main():
     }
     resumed = False
     if (exp_dir / "state.json").exists():
-
+        # NOTE: weights_only is to protect against arbitrary code execution with pickle decoding.
         def _load_to_device(p):
             return torch.load(p, map_location=device, weights_only=True)
 
@@ -92,6 +96,7 @@ def main():
     _LOGGER.info(f"Resumed={resumed} | {state}")
     exp_dir.mkdir(parents=True, exist_ok=True)
 
+    # Initializing [wandb](https://wandb.ai/) - a very useful experiment tracking library.
     wandb.init(
         project="distributed-training-guide",
         dir=exp_dir,
@@ -107,6 +112,7 @@ def main():
         },
     )
 
+    # will be using to understand breakdown of speed
     timers = {k: LocalTimer(device) for k in ["data", "forward", "backward", "update"]}
 
     for state["epoch"] in range(state["epoch"], args.num_epochs):
@@ -116,13 +122,17 @@ def main():
         if state["epoch_step"] > 0:
             progress_bar.update(state["epoch_step"])
 
+        # NOTE: This is not standard. Normally you can just iterate directly over dataloader.
+        #       We are doing this so we can explicitly measure the time it takes to generate a batch.
         batches = iter(dataloader)
 
         for i_step in range(len(dataloader)):
+            # Here we measure the time it takes to generate a batch and move it to the GPU
             with timers["data"], torch.no_grad():
                 batch = next(batches)
                 batch = {k: v.to(device=device) for k, v in batch.items()}
 
+            # For resuming, this has to come after getting the next batch, so we move through the dataset properly.
             if i_step < state["epoch_step"]:
                 # NOTE: for resuming
                 continue
@@ -131,6 +141,7 @@ def main():
                 outputs = model(**batch)
 
             with timers["backward"]:
+                # NOTE: set_to_none=True will de-allocate the gradients, saving us some memory.
                 optimizer.zero_grad(set_to_none=True)
                 outputs.loss.backward()
 
@@ -144,26 +155,28 @@ def main():
             progress_bar.update(1)
 
             if state["global_step"] % args.log_freq == 0:
-                wandb.log(
-                    {
-                        "lr": lr_scheduler.get_last_lr()[0],
-                        "running_loss": state["running_loss"] / args.log_freq,
-                        "epoch": state["epoch"],
-                        "epoch_progress": state["epoch_step"] / len(dataloader),
-                        "num_batches_remaining": len(dataloader) - i_step,
-                        "time/total": sum(t.avg_elapsed_ms() for t in timers.values()),
-                        **{
-                            f"time/{k}": timer.avg_elapsed_ms()
-                            for k, timer in timers.items()
-                        },
+                info = {
+                    "lr": lr_scheduler.get_last_lr()[0],
+                    "running_loss": state["running_loss"] / args.log_freq,
+                    "epoch": state["epoch"],
+                    "epoch_progress": state["epoch_step"] / len(dataloader),
+                    "num_batches_remaining": len(dataloader) - i_step,
+                    "time/total": sum(t.avg_elapsed_ms() for t in timers.values()),
+                    **{
+                        f"time/{k}": timer.avg_elapsed_ms()
+                        for k, timer in timers.items()
                     },
-                    step=state["global_step"],
-                )
+                }
+
+                _LOGGER.info(info)
+                wandb.log(info, step=state["global_step"])
+
                 state["running_loss"] = 0
                 for t in timers.values():
                     t.reset()
 
             if state["global_step"] % args.ckpt_freq == 0:
+                _LOGGER.info("Saving checkpoint.")
                 torch.save(optimizer.state_dict(), exp_dir / "optimizer.pt")
                 torch.save(model.state_dict(), exp_dir / "model.pt")
                 torch.save(lr_scheduler.state_dict(), exp_dir / "lr_scheduler.pt")
@@ -174,6 +187,10 @@ def main():
 
 
 def _load_and_preprocess_data(args, tokenizer, config):
+    """
+    Function created using code found in
+    https://github.com/huggingface/transformers/blob/v4.45.1/examples/pytorch/language-modeling/run_clm_no_trainer.py
+    """
     data = datasets.load_dataset(args.dataset_name, trust_remote_code=True)
 
     column_names = data["train"].column_names

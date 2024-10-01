@@ -70,10 +70,7 @@ Two main differences here:
  
      rank = dist.get_rank()
 -    local_rank = rank % torch.cuda.device_count()
-+    if args.local_rank is not None:
-+        local_rank = args.local_rank
-+    else:
-+        local_rank = rank % torch.cuda.device_count()
++    local_rank = args.local_rank or (rank % torch.cuda.device_count())
      world_size = dist.get_world_size()
  
      _LOGGER.info(f"local_rank={local_rank} rank={rank} world size={world_size}")

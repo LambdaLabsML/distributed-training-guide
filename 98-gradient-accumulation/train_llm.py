@@ -59,10 +59,6 @@ def main():
         model = AutoModelForCausalLM.from_config(config, torch_dtype=dtype).to(device)
         tokenizer = AutoTokenizer.from_pretrained(args.model_name)
 
-    embedding_size = model.get_input_embeddings().weight.shape[0]
-    if len(tokenizer) > embedding_size:
-        model.resize_token_embeddings(len(tokenizer))
-
     model = DistributedDataParallel(
         model, device_ids=[local_rank], output_device=local_rank
     )
@@ -182,27 +178,29 @@ def main():
             progress_bar.update(1)
 
             if state["global_step"] % args.log_freq == 0:
-                wandb.log(
-                    {
-                        "lr": lr_scheduler.get_last_lr()[0],
-                        "running_loss": state["running_loss"] / args.log_freq,
-                        "epoch": state["epoch"],
-                        "epoch_progress": state["epoch_step"] / len(dataloader),
-                        "num_batches_remaining": len(dataloader) - i_step,
-                        "time/total": sum(t.avg_elapsed_ms() for t in timers.values()),
-                        **{
-                            f"time/{k}": timer.avg_elapsed_ms()
-                            for k, timer in timers.items()
-                        },
+                info = {
+                    "lr": lr_scheduler.get_last_lr()[0],
+                    "running_loss": state["running_loss"] / args.log_freq,
+                    "epoch": state["epoch"],
+                    "epoch_progress": state["epoch_step"] / len(dataloader),
+                    "num_batches_remaining": len(dataloader) - i_step,
+                    "time/total": sum(t.avg_elapsed_ms() for t in timers.values()),
+                    **{
+                        f"time/{k}": timer.avg_elapsed_ms()
+                        for k, timer in timers.items()
                     },
-                    step=state["global_step"],
-                )
+                }
+
+                _LOGGER.info(info)
+                wandb.log(info, step=state["global_step"])
+
                 state["running_loss"] = 0
                 for t in timers.values():
                     t.reset()
 
             if state["global_step"] % args.ckpt_freq == 0:
                 if rank == 0:
+                    _LOGGER.info("Saving checkpoint.")
                     torch.save(optimizer.state_dict(), exp_dir / "optimizer.pt")
                     torch.save(model.state_dict(), exp_dir / "model.pt")
                     torch.save(lr_scheduler.state_dict(), exp_dir / "lr_scheduler.pt")
@@ -214,6 +212,10 @@ def main():
 
 
 def _load_and_preprocess_data(args, tokenizer, config):
+    """
+    Function created using code found in
+    https://github.com/huggingface/transformers/blob/v4.45.1/examples/pytorch/language-modeling/run_clm_no_trainer.py
+    """
     data = datasets.load_dataset(args.dataset_name, trust_remote_code=True)
 
     column_names = data["train"].column_names

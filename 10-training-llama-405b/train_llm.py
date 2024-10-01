@@ -92,10 +92,6 @@ def main():
                 attn_implementation="flash_attention_2",
             )
 
-    embedding_size = model.get_input_embeddings().weight.shape[0]
-    if len(tokenizer) > embedding_size:
-        model.resize_token_embeddings(len(tokenizer))
-
     mem = torch.cuda.memory_stats(device)
     _LOGGER.info(
         f"Before FSDP: {(mem['allocated_bytes.all.current'] + mem['reserved_bytes.all.current']) * 1e-9}gb used"
@@ -282,6 +278,7 @@ def main():
                     t.reset()
 
             if state["global_step"] % args.ckpt_freq == 0:
+                _LOGGER.info("Saving checkpoint.")
                 dist.barrier()
                 # NOTE: we have to call this on ALL ranks
                 sharded_model_state, sharded_optimizer_state = get_state_dict(
@@ -301,6 +298,10 @@ def main():
 
 
 def _load_and_preprocess_data(args, tokenizer, config):
+    """
+    Function created using code found in
+    https://github.com/huggingface/transformers/blob/v4.45.1/examples/pytorch/language-modeling/run_clm_no_trainer.py
+    """
     data = datasets.load_dataset(args.dataset_name, trust_remote_code=True)
 
     column_names = data["train"].column_names
