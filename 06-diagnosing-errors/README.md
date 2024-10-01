@@ -2,6 +2,8 @@
 
 Hanging and deadlocks can be caused by so many things, even your own code! Here's some diagnostic tools that will help you figure out what is going on.
 
+Check out the `top-cluster.py` file at the top level of this repo for help with monitoring GPU usage!
+
 ## Getting a dump of stack traces
 
 Use [py-spy](https://github.com/benfred/py-spy) to get a dump of stacktraces from all python threads in a running python program. Here's how you get a dump from each worker:

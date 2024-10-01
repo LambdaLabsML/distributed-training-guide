@@ -6,7 +6,11 @@ See pytorch's documnetation on reproducibility: https://pytorch.org/docs/stable/
 
 ```bash
 cd distributed-training-guide/97-determinism
-CUBLAS_WORKSPACE_CONFIG=:4096:8 TORCHELASTIC_ERROR_FILE=../error.json OMP_NUM_THREADS=1 torchrun \
+export CUBLAS_WORKSPACE_CONFIG=:4096:8
+export TORCHELASTIC_ERROR_FILE=../error.json
+export OMP_NUM_THREADS=1
+export HF_HOME=../.cache
+torchrun \
     --rdzv-id multi-node \
     --rdzv-backend c10d \
     --rdzv-endpoint <IP ADDRESS of main node>:<port> \
@@ -95,5 +99,5 @@ index 24eacbd..0a3a029 100644
 +
  def _load_and_preprocess_data(args, tokenizer, config):
      data = datasets.load_dataset(
-         args.dataset_name, trust_remote_code=True, cache_dir=args.dataset_cache_root
+         args.dataset_name, trust_remote_code=True, 
 ```

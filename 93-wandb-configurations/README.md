@@ -164,7 +164,6 @@ index 38f3cf0..3233f81 100644
 @@ -305,6 +316,11 @@ def _get_parser() -> argparse.ArgumentParser:
      parser.add_argument("--log-freq", default=100, type=int)
      parser.add_argument("--ckpt-freq", default=500, type=int)
-     parser.add_argument("--dataset-cache-root", default="../.cache")
 +    parser.add_argument(
 +        "--wandb-mode",
 +        default="all-ranks",

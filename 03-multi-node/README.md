@@ -6,7 +6,10 @@ Run this command on **every** participating node.
 
 ```bash
 cd distributed-training-guide/03-multi-node
-TORCHELASTIC_ERROR_FILE=../error.json OMP_NUM_THREADS=1 torchrun \
+export HF_HOME=../.cache
+export TORCHELASTIC_ERROR_FILE=../error.json
+export OMP_NUM_THREADS=1
+torchrun \
     --rdzv-id multi-node \
     --rdzv-backend c10d \
     --rdzv-endpoint <IP ADDRESS of main node>:<port> \
@@ -31,10 +34,19 @@ It actually works in much the same way as the multi GPU. Since in the single nod
 The main differences here to consider are:
 1. How the nodes get in contact with each other (the `rdzv` arguments in the torchrun command)
 2. Your code may need to use `local_rank` instead of `rank`. `rank` is between 0 and world_size, so if you have 2 machines, the second machine may have ranks 8-16. Local rank on the second machine will still be 0-8.
+3. How each node has a copy of the same data (either downloading the data to a shared network drive, or downloading a copy to each node)
 
 Error reporting/handling becomes extremely important with more than 1 node. Networking issues are very common, and there are some subtle things that you need to ensure are identical between the machines.
 
 tl;dr: When going from single to multi node, ensuring environments are the same is the most important thing.
+
+### Shared network drive
+
+Shared network drives are the easiest way to maintain the same data/environment on all nodes. When you create a python virtual environment in a shared network drive, all nodes will be able to use the same python executable.
+
+Additionally, you can put all of your data and code in the shared directory as well.
+
+Whatever you do, make sure to set the `HF_HOME` environment variable to control where huggingface downloads both datasets and model weights.
 
 ## Code Diff
 

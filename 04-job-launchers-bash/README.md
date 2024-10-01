@@ -28,6 +28,7 @@ cat -n gpus | xargs -n2 \
     tmux new-session -d -s rank-$(($0 - 1)) -c $(pwd) \
     -e TORCHELASTIC_ERROR_FILE=../error.json \
     -e OMP_NUM_THREADS=1 \
+    -e HF_HOME=../.cache \
     -e MASTER_ADDR=$(head -n 1 gpus) \
     -e MASTER_PORT=5001 \
     -e WORLD_SIZE=$(wc -l < gpus) \
@@ -79,6 +80,7 @@ xargs \
     tmux new-session -d -s torchrun-{} -c $(pwd) \
     -e TORCHELASTIC_ERROR_FILE=../error.json \
     -e OMP_NUM_THREADS=1 \
+    -e HF_HOME=../.cache \
     $(which python) -m torch.distributed.run \
     --rdzv-id multi-node-tmux \
     --rdzv-backend c10d \

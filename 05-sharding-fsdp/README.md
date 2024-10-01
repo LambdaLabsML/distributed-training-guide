@@ -266,7 +266,10 @@ Same command as normal:
 
 ```bash
 cd distributed-training-guide/05-sharding-fsdp
-TORCHELASTIC_ERROR_FILE=../error.json OMP_NUM_THREADS=1 torchrun --standalone \
+export TORCHELASTIC_ERROR_FILE=../error.json
+export OMP_NUM_THREADS=1
+export HF_HOME=../.cache
+torchrun --standalone \
     --nnodes 1 \
     --nproc-per-node gpu \
     --redirects 3 \

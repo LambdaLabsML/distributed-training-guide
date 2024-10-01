@@ -16,6 +16,7 @@ mpirun \
     -x MASTER_PORT=5001 \
     -x TORCHELASTIC_ERROR_FILE=../error.json \
     -x OMP_NUM_THREADS=1 \
+    -x HF_HOME=../.cache \
     -bind-to none \
     -map-by slot \
     -wdir $(pwd) \

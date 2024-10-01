@@ -42,7 +42,6 @@ References:
 @@ -305,11 +302,10 @@ def _get_parser() -> argparse.ArgumentParser:
      parser.add_argument("--log-freq", default=100, type=int)
      parser.add_argument("--ckpt-freq", default=500, type=int)
-     parser.add_argument("--dataset-cache-root", default="../.cache")
 +    parser.add_argument("--local_rank", type=int, default=None)
 +    deepspeed.add_config_arguments(parser)
      return parser
@@ -191,7 +190,10 @@ Saving becomes: (**NOTE**: saving must be done on ALL ranks instead of just rank
 
 ```bash
 cd distributed-training-guide/05-sharding-deepspeed
-TORCHELASTIC_ERROR_FILE=../error.json OMP_NUM_THREADS=1 deepspeed \
+export TORCHELASTIC_ERROR_FILE=../error.json
+export OMP_NUM_THREADS=1
+export HF_HOME=../.cache
+deepspeed \
     --enable_each_rank_log ../logs \
     train_llm.py \
     --experiment-name deepspeed-multi-node-$(date +%Y-%m-%dT%H-%M-%S) \

@@ -216,9 +216,7 @@ def main():
 
 
 def _load_and_preprocess_data(args, tokenizer, config):
-    data = datasets.load_dataset(
-        args.dataset_name, trust_remote_code=True, cache_dir=args.dataset_cache_root
-    )
+    data = datasets.load_dataset(args.dataset_name, trust_remote_code=True)
 
     column_names = data["train"].column_names
     text_column_name = "text" if "text" in column_names else column_names[0]
@@ -318,7 +316,6 @@ def _get_parser() -> argparse.ArgumentParser:
     parser.add_argument("--batch-size", default=1, type=int)
     parser.add_argument("--log-freq", default=100, type=int)
     parser.add_argument("--ckpt-freq", default=500, type=int)
-    parser.add_argument("--dataset-cache-root", default="../.cache")
     parser.add_argument(
         "--lr-scaling", default="static", choices=["static", "linear", "sqrt"]
     )

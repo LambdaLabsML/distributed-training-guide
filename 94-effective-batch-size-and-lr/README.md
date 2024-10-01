@@ -71,7 +71,6 @@ index 38f3cf0..0cd2fac 100644
 @@ -305,6 +312,9 @@ def _get_parser() -> argparse.ArgumentParser:
      parser.add_argument("--log-freq", default=100, type=int)
      parser.add_argument("--ckpt-freq", default=500, type=int)
-     parser.add_argument("--dataset-cache-root", default="../.cache")
 +    parser.add_argument(
 +        "--lr-scaling", default="static", choices=["static", "linear", "sqrt"]
 +    )

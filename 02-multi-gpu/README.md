@@ -4,7 +4,9 @@ NOTE: This chapter's code builds off of chapter 1.
 
 ```bash
 cd distributed-training-guide/02-multi-gpu
-TORCHELASTIC_ERROR_FILE=../error.json OMP_NUM_THREADS=1 torchrun --standalone \
+export TORCHELASTIC_ERROR_FILE=../error.json
+export OMP_NUM_THREADS=1
+torchrun --standalone \
     --nnodes 1 \
     --nproc-per-node gpu \
     --redirects 3 \
@@ -118,7 +120,9 @@ You also need to add a `@record` (imported `from torch.distributed.elastic.multi
 
 #### OMP_NUM_THREADS
 
-pytorch by default tries to take advantage of all the cores available when doing computations, even when you are on the GPU. Since we have multiple processes running pytorch, if we didn't set `OMP_NUM_THREADS` to 1, all of them would try to use all available cores.
+pytorch by default tries to take advantage of all the cores available when doing computations, even when you are on the GPU. Since we have multiple processes running pytorch, if we didn't set `OMP_NUM_THREADS` to something else, all of them would try to use all available cores.
+
+You can manually check how many available cores there are and then split them accordingly. E.g. if there were 32 cores on a machine and 8 GPUs, you could set OMP_NUM_THREADS to 4.
 
 ### Calling `dist.init_process_group()`
 
