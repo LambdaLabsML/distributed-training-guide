@@ -1,6 +1,6 @@
 # Effective Batch Size and LR
 
-NOTE: This chapter's code builds off of chapter 3's code.
+**NOTE: This chapter's code builds off of [chapter 3](../../03-multi-node/)'s code.**
 
 As you scale up the number of nodes, the effective batch size (the amount of items used for model updates) increases as well:
 

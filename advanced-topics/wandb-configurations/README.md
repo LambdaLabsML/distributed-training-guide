@@ -1,6 +1,6 @@
 # wandb configurations
 
-NOTE: This chapter's code builds off of chapter 3's code.
+**NOTE: This chapter's code builds off of [chapter 3](../../03-multi-node/)'s code.**
 
 There are a bunch of ways to configure wandb during your training runs. What will work best for you depends on how big your cluster is.
 

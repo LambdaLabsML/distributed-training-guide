@@ -1,6 +1,6 @@
 # Determinism across resumes
 
-NOTE: This chapter's code builds off of chapter 3's code.
+**NOTE: This chapter's code builds off of [chapter 3](../../03-multi-node/)'s code.**
 
 See pytorch's documnetation on reproducibility: https://pytorch.org/docs/stable/notes/randomness.html#reproducibility
 
