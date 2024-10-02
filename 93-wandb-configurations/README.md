@@ -18,7 +18,7 @@ if rank == 0:
         dir=exp_dir,
         id=args.experiment_name,
         name=args.experiment_name,
-        resume="must" if resumed else None,
+        fork_from=f"{args.experiment_name}-{rank}?_step={state['global_step']}" if resumed else None,
         save_code=True,
         config=...,
     )
@@ -34,7 +34,7 @@ if local_rank == 0:
         group=args.experiment_name,
         name=f"rank-{rank}",
         id=f"{args.experiment_name}-{rank}",
-        resume="must" if resumed else None,
+        fork_from=f"{args.experiment_name}-{rank}?_step={state['global_step']}" if resumed else None,
         save_code=True,
         config=...,
     )
@@ -59,7 +59,7 @@ wandb.init(
     group=args.experiment_name,
     name=f"rank-{rank}",
     id=f"{args.experiment_name}-{rank}",
-    resume="must" if resumed else None,
+    fork_from=f"{args.experiment_name}-{rank}?_step={state['global_step']}" if resumed else None,
     save_code=True,
     config=...,
 )
@@ -81,7 +81,7 @@ index 38f3cf0..3233f81 100644
 -        group=args.experiment_name,
 -        name=f"rank-{rank}",
 -        id=f"{args.experiment_name}-{rank}",
--        resume="must" if resumed else None,
+-        fork_from=f"{args.experiment_name}-{rank}?_step={state['global_step']}" if resumed else None,
 -        save_code=True,
 -        config={
 -            "args": vars(args),
@@ -107,7 +107,7 @@ index 38f3cf0..3233f81 100644
 +            group=args.experiment_name,
 +            name=f"rank-{rank}",
 +            id=f"{args.experiment_name}-{rank}",
-+            resume="must" if resumed else None,
++            fork_from=f"{args.experiment_name}-{rank}?_step={state['global_step']}" if resumed else None,
 +            save_code=True,
 +            config={
 +                "args": vars(args),

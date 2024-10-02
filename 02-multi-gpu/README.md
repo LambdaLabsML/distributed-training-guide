@@ -245,7 +245,7 @@ wandb.init(
 +        name=f"rank-{rank}",
 -        id=args.experiment_name,
 +        id=f"{args.experiment_name}-{rank}",
-         resume="must" if resumed else None,
+         fork_from=f"{args.experiment_name}-{rank}?_step={state['global_step']}" if resumed else None,
          save_code=True,
          config={
              "args": vars(args),
