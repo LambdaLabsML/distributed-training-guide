@@ -4,25 +4,11 @@ This guide aims at a comprehensive guide on best practices for distributed train
 
 ## Questions this guide answers:
 
-#### How do I update a single gpu training/fine tuning script to run on multiple GPUs or multiple nodes?
-
-*See chapters 2 & 3*
-
-#### How do I diagnose hanging/errors that happen during training?
-
-*See chapter 6*
-
-#### My model/optimizer is too big for a single gpu - how do I train/fine tune it on my cluster?
-
-*See chapter 5*
-
-#### How do I schedule/launch training on a cluster?
-
-*See chapter 4*
-
-#### How do I scale my hyperparameters when increasing the number of workers?
-
-*See chapters 94, 95, and 98*
+- How do I update a single gpu training/fine tuning script to run on multiple GPUs or multiple nodes?
+- How do I diagnose hanging/errors that happen during training?
+- My model/optimizer is too big for a single gpu - how do I train/fine tune it on my cluster?
+- How do I schedule/launch training on a cluster?
+- How do I scale my hyperparameters when increasing the number of workers?
 
 ---
 
