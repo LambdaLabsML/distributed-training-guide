@@ -4,11 +4,11 @@
 
 Since it is quite cumbersome to manually SSH into every node and start a training job, there are various ways to launch distributed training jobs from a single node.
 
-## Bash Commands
+## Bash Commands (xargs/ssh/tmux)
 
 Since the main thing we need to do is spawn processes on other machines, we can combine a few bash tools together to achieve this. This approach is one of the most lightweight approaches for this, and makes it easy to edit the commands any way you want. While it takes a bit to understand how all the bash commands work together, they are generally applicable to other problems as well.
 
-### Launching torchrun once per node with xargs, ssh, and tmux
+### Launching torchrun once per node
 
 Put your list of hostnames/IPs in a file called `hosts`. Each line represents a single node that we will launch `torchrun` on.
 
@@ -45,7 +45,7 @@ xargs \
     --model-name openai-community/gpt2
 ```
 
-### Launching training script once per gpu with xargs, ssh, and tmux
+### Launching script once per gpu
 
 Put your list of hostnames in a file called `gpus`. Each line should contain the hostname for a single gpu. If a single host has 8 GPUs, and you want to use all 8, that hostname should appear 8 separate times.
 
@@ -94,8 +94,6 @@ We need a couple of environment variables to make `dist.init_process_group()` wo
 3. `RANK` which we have from our enumerated cat command - though we have to subtract 1 since `cat` enumerates starting at 1 - `$(($0 - 1))`
 
 From there on we just paste our normal python command, note that we use `$(which python)` to get the absolute path to whatever interpreter executable we are using. 
-
-
 
 ## slurm
 
@@ -200,9 +198,11 @@ deepspeed is a distributed training library with many optimizations. We go into 
 
 **NOTE: you do not have to integrate deepspeed into your training code to use the deepspeed launcher.**
 
-1. Install: `pip install deepspeed`
-2. Add `--local_rank` to cli parsing:
+Install: `pip install deepspeed`
 
+### Code Changes
+
+Add `--local_rank` to cli parsing:
 ```diff
      parser.add_argument("--log-freq", default=100, type=int)
      parser.add_argument("--ckpt-freq", default=500, type=int)
@@ -210,14 +210,13 @@ deepspeed is a distributed training library with many optimizations. We go into 
      return parser
 ```
 
-3. Use it when initializing local_rank
-
+Use it when initializing local_rank:
 ```diff
 -    local_rank = rank % torch.cuda.device_count()
 +    local_rank = args.local_rank or (rank % torch.cuda.device_count())
 ```
 
-4. Launch
+### Command
 
 ```bash
 cd distributed-training-guide/04-job-launchers
