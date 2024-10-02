@@ -16,7 +16,6 @@ from torch import distributed as dist
 from torch.distributed.elastic.multiprocessing.errors import record
 from torch.distributed.fsdp.fully_sharded_data_parallel import (
     FullyShardedDataParallel,
-    BackwardPrefetch,
     CPUOffload,
     ShardingStrategy,
 )
@@ -71,10 +70,10 @@ def main():
 
     with rank0_first():
         config = AutoConfig.from_pretrained(args.model_name, use_cache=False)
-        tokenizer = AutoTokenizer.from_pretrained(args.model_name)
         # NOTE: meta device will not allocate any memory
         with torch.device("meta"):
             model = AutoModelForCausalLM.from_config(config, torch_dtype=dtype)
+    LOGGER.info(f"{sum(p.numel() for p in model.parameters())} model parameters")
 
     LOGGER.info(
         f"Before FSDP: {torch.cuda.memory_stats(device)['allocated_bytes.all.current'] * 1e-9}gb allocated"
@@ -115,7 +114,7 @@ def main():
     # NOTE: since this can download data, make sure to do the main process first
     # NOTE: This assumes that the data is on a **shared** network drive, accessible to all processes
     with rank0_first():
-        train_data = _load_and_preprocess_data(args, tokenizer, config)
+        train_data = _load_and_preprocess_data(args, config)
     LOGGER.info(f"{len(train_data)} training samples")
 
     dataloader = DataLoader(
@@ -191,7 +190,6 @@ def main():
         save_code=True,
         config={
             "args": vars(args),
-            "embedding_size": len(tokenizer),
             "training_data_size": len(train_data),
             "num_batches": len(dataloader),
             "rank": rank,
@@ -283,11 +281,13 @@ def main():
         state["epoch_step"] = 0
 
 
-def _load_and_preprocess_data(args, tokenizer, config):
+def _load_and_preprocess_data(args, config):
     """
     Function created using code found in
     https://github.com/huggingface/transformers/blob/v4.45.1/examples/pytorch/language-modeling/run_clm_no_trainer.py
     """
+    tokenizer = AutoTokenizer.from_pretrained(args.model_name)
+
     data = datasets.load_dataset(args.dataset_name, trust_remote_code=True)
 
     column_names = data["train"].column_names

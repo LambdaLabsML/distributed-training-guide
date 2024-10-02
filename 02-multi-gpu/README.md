@@ -254,7 +254,6 @@ wandb.init(
          save_code=True,
          config={
              "args": vars(args),
-             "embedding_size": len(tokenizer),
              "training_data_size": len(train_data),
              "num_batches": len(dataloader),
 +            "rank": rank,
