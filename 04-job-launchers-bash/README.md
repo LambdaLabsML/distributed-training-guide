@@ -8,6 +8,43 @@ NOTE: This chapter's code is identical to chapter 3's code, so the command uses 
 
 Since the main thing we need to do is spawn processes on other machines, we can combine a few bash tools together to achieve this. This approach is one of the most lightweight approaches for this, and makes it easy to edit the commands any way you want. While it takes a bit to understand how all the bash commands work together, they are generally applicable to other problems as well.
 
+### Launching torchrun once per node with xargs, ssh, and tmux
+
+Put your list of hostnames/IPs in a file called `hosts`. Each line represents a single node that we will launch `torchrun` on.
+
+```
+<hostname 1>
+<hostname 2>
+...
+<hostname n>
+```
+
+Then we can use ssh to launch `torchrun` on each of the hosts. This command is very similar to our previous bash command, except we are using `torchrun` (`python -m torch.distributed.run`) instead of just invoking our python script.
+
+```bash
+cd distributed-training-guide/04-job-launchers-bash
+xargs \
+    -a hosts \
+    -I {} \
+    ssh {} \
+    tmux new-session -d -s torchrun-{} -c $(pwd) \
+    -e TORCHELASTIC_ERROR_FILE=../error.json \
+    -e OMP_NUM_THREADS=1 \
+    -e HF_HOME=../.cache \
+    $(which python) -m torch.distributed.run \
+    --rdzv-id multi-node-tmux \
+    --rdzv-backend c10d \
+    --rdzv-endpoint $(head -n 1 hosts):5001 \
+    --nnodes $(wc -l < hosts) \
+    --nproc-per-node gpu \
+    --redirects 3 \
+    --log-dir ../logs \
+    ../03-multi-node/train_llm.py \
+    --experiment-name multi-node-tmux \
+    --dataset-name tatsu-lab/alpaca \
+    --model-name openai-community/gpt2
+```
+
 ### Launching training script once per gpu with xargs, ssh, and tmux
 
 Put your list of hostnames in a file called `gpus`. Each line should contain the hostname for a single gpu. If a single host has 8 GPUs, and you want to use all 8, that hostname should appear 8 separate times.
@@ -57,40 +94,3 @@ We need a couple of environment variables to make `dist.init_process_group()` wo
 3. `RANK` which we have from our enumerated cat command - though we have to subtract 1 since `cat` enumerates starting at 1 - `$(($0 - 1))`
 
 From there on we just paste our normal python command, note that we use `$(which python)` to get the absolute path to whatever interpreter executable we are using. 
-
-### Launching torchrun once per node with xargs, ssh, and tmux
-
-Put your list of hostnames/IPs in a file called `hosts`. Each line represents a single node that we will launch `torchrun` on.
-
-```
-<hostname 1>
-<hostname 2>
-...
-<hostname n>
-```
-
-Then we can use ssh to launch `torchrun` on each of the hosts. This command is very similar to our previous bash command, except we are using `torchrun` (`python -m torch.distributed.run`) instead of just invoking our python script.
-
-```bash
-cd distributed-training-guide/04-job-launchers-bash
-xargs \
-    -a hosts \
-    -I {} \
-    ssh {} \
-    tmux new-session -d -s torchrun-{} -c $(pwd) \
-    -e TORCHELASTIC_ERROR_FILE=../error.json \
-    -e OMP_NUM_THREADS=1 \
-    -e HF_HOME=../.cache \
-    $(which python) -m torch.distributed.run \
-    --rdzv-id multi-node-tmux \
-    --rdzv-backend c10d \
-    --rdzv-endpoint $(head -n 1 hosts):5001 \
-    --nnodes $(wc -l < hosts) \
-    --nproc-per-node gpu \
-    --redirects 3 \
-    --log-dir ../logs \
-    ../03-multi-node/train_llm.py \
-    --experiment-name multi-node-tmux \
-    --dataset-name tatsu-lab/alpaca \
-    --model-name openai-community/gpt2
-```
