@@ -2,7 +2,39 @@
 
 Hanging and deadlocks can be caused by so many things, even your own code! Here's some diagnostic tools that will help you figure out what is going on.
 
-Check out the `top-cluster.py` file at the top level of this repo for help with monitoring GPU usage!
+## System metrics to watch for to diagnose hanging
+
+`GPU Power Usage` will be the main one - if the training process is hanging, then the power usage will drop to around ~10% for all workers:
+
+```bash
+> nvidia-smi --query-gpu=power.draw,power.limit --format=csv,noheader
+69.75 W, 700.00 W
+75.10 W, 700.00 W
+70.82 W, 700.00 W
+69.29 W, 700.00 W
+69.19 W, 700.00 W
+68.72 W, 700.00 W
+70.80 W, 700.00 W
+70.87 W, 700.00 W
+```
+
+Using our provided [top-cluster.py](../top-cluster.py) script will output something like this:
+
+```bash
+> python top-cluster.py <hosts file>
+===2024-10-02 19:55:02.553039
+    name	      util	     power	    memory	    nprocs
+ cluster	    100.0%	     99.1%	     96.9%	        64
+node-001	    100.0%	     99.7%	     96.1%	         8
+node-002	    100.0%	     97.8%	     96.9%	         8
+node-003	    100.0%	     99.2%	     97.2%	         8
+node-004	    100.0%	     99.1%	     97.4%	         8
+node-005	    100.0%	     98.1%	     97.1%	         8
+node-006	    100.0%	     99.0%	     97.7%	         8
+node-007	    100.0%	     99.8%	     96.9%	         8
+node-008	    100.0%	    100.0%	     96.2%	         8
+===
+```
 
 ## Getting a dump of stack traces
 
@@ -12,7 +44,9 @@ Use [py-spy](https://github.com/benfred/py-spy) to get a dump of stacktraces fro
 sudo env "PATH=$PATH" py-spy dump --locals --pid <PID of the torchrun process>
 ```
 
-Another useful command is `py-spy top --pid <>`, which allows you to watch what is going on in a python process.
+## Benchmarking/profiling
+
+You can use `py-spy top --pid <>`, to get a `top`/`htop` like view of the functions that are being called in your python process.
 
 ## Recording errors
 
@@ -30,28 +64,6 @@ def main():
 ```
 
 Luckily all the code in this guide has been doing this, and so should you! **Make sure to set $TORCHELASTIC_ERROR_FILE**!.
-
-## System metrics to watch for to diagnose hanging
-
-`GPU Power Usage` will be the main one - if the training process is hanging, then the power usage will drop to around ~10% for all workers:
-
-```bash
-nvidia-smi --query-gpu=power.draw,power.limit --format=csv,noheader
-```
-
-Will output something like this: (note this is with nothing running)
-```
-69.75 W, 700.00 W
-75.10 W, 700.00 W
-70.82 W, 700.00 W
-69.29 W, 700.00 W
-69.19 W, 700.00 W
-68.72 W, 700.00 W
-70.80 W, 700.00 W
-70.87 W, 700.00 W
-```
-
-You can use the `top-cluster.py` script at the top level of the repo for monitoring things like this.
 
 ## Checklist for system problems
 
