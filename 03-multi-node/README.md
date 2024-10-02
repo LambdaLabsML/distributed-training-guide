@@ -48,60 +48,34 @@ Additionally, you can put all of your data and code in the shared directory as w
 
 Whatever you do, make sure to set the `HF_HOME` environment variable to control where huggingface downloads both datasets and model weights.
 
-## Code Diff
+## Code Changes
 
 Not much has to change code wise. The main thing is how your data is stored/organized.
 
-If your workers operate on shared network space, then only `rank==0` should be writing to it. Otherwise you may want `local_rank==0` writing, so each node is collecting results.
+### Using local rank for device instead of rank
 
-```diff --git a/02-multi-gpu/train_llm.py b/03-multi-node/train_llm.py
-index 3130381..d5cb05c 100644
---- a/02-multi-gpu/train_llm.py
-+++ b/03-multi-node/train_llm.py
-@@ -49,12 +49,12 @@ def main():
-     dist.init_process_group()
- 
-     rank = dist.get_rank()
-+    local_rank = rank % torch.cuda.device_count()
-     world_size = dist.get_world_size()
--    assert world_size == torch.cuda.device_count()
- 
--    _LOGGER.info(f"rank={rank} world size={world_size}")
-+    _LOGGER.info(f"local_rank={local_rank} rank={rank} world size={world_size}")
- 
--    device = torch.device(f"cuda:{rank}")
-+    device = torch.device(f"cuda:{local_rank}")
-     dtype = torch.bfloat16
-     torch.cuda.set_device(device)
- 
-@@ -71,9 +71,12 @@ def main():
-     if len(tokenizer) > embedding_size:
-         model.resize_token_embeddings(len(tokenizer))
- 
--    model = DistributedDataParallel(model, device_ids=[rank], output_device=rank)
-+    model = DistributedDataParallel(
-+        model, device_ids=[local_rank], output_device=local_rank
-+    )
- 
-     # NOTE: since this can download data, make sure to do the main process first
-+    # NOTE: This assumes that the data is on a **shared** network drive, accessible to all processes
-     if rank == 0:
-         train_data = _load_and_preprocess_data(args, tokenizer, config)
-     dist.barrier()
-@@ -116,6 +119,7 @@ def main():
- 
-     dist.barrier()
-     if rank == 0:
-+        # NOTE: assuming directory is shared across all nodes, that's why we do rank instead of local_rank
-         _LOGGER.info(f"Creating experiment root directory")
-         exp_dir.mkdir(parents=True, exist_ok=True)
-     dist.barrier()
-@@ -137,6 +141,7 @@ def main():
-             "training_data_size": len(train_data),
-             "num_batches": len(dataloader),
-             "rank": rank,
-+            "local_rank": local_rank,
-             "world_size": world_size,
-         },
-     )
+```diff
+ rank = dist.get_rank()
++local_rank = rank % torch.cuda.device_count()
+-device = torch.device(f"cuda:{rank}")
++device = torch.device(f"cuda:{local_rank}")
+```
+
+### Using local rank for DDP instead of rank
+
+```diff
+-model = DistributedDataParallel(model, device_ids=[rank], output_device=rank)
++model = DistributedDataParallel(
++    model, device_ids=[local_rank], output_device=local_rank
++)
+```
+
+### Checking whether exp_dir is a shared network drive
+
+```diff
+-if rank == 0:
++if (exp_dir.is_mount() and rank == 0) or (
++    not exp_dir.is_mount() and local_rank == 0
++):
+     exp_dir.mkdir(parents=True, exist_ok=True) 
 ```
