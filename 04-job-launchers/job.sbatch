@@ -1,4 +1,3 @@
-#!/bin/bash
 # SBATCH --ntasks-per-node=1
 
 source $(pwd)/../venv/bin/activate
