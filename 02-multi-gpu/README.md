@@ -1,6 +1,6 @@
 # Multi GPU on a single node
 
-NOTE: This chapter's code builds off of chapter 1.
+**NOTE: This chapter's code builds off of [chapter 1](../01-single-gpu).**
 
 ```bash
 cd distributed-training-guide/02-multi-gpu
@@ -57,6 +57,8 @@ So how does pytorch achieve this?
 
 When we use `torchrun` to launch a distributed training job, what's happening is that it is **launch N separate processes** (where N is the number of gpus you specify in `--nproc-per-node`), all running your same training script.
 
+<img width="611" alt="image" src="https://github.com/user-attachments/assets/44919819-144c-4498-b33f-78dfde388c31">
+
 It will also set up some synchronization between the processes (the `--standlone` argument for now, but we will learn more in chapter 3).
 
 Then each of the processes is running the same training code and needs to synchronize at various points.
@@ -77,10 +79,8 @@ The clever thing that the DistributedSampler does is it partitions the length of
 
 ```python
 # simplified DistributedSampler
-rank = dist.get_rank()
-world_size = dist.get_world_size()
-worker_len = len(dataset) // world_size
-rank * worker_len + random.choice(range(worker_len))
+worker_len = len(dataset) // dist.get_world_size()
+dist.get_rank() * worker_len + random.choice(range(worker_len))
 ```
 
 ### Gradient Synchronization - `torch.nn.parallel.DistributedDataParallel`
@@ -91,7 +91,13 @@ This is a model wrapper class that ensures **gradients are synchronized before c
 
 This class also ensures that *model parameters are equal when you construct it*!
 
-It achieves all of this through some very special model hooks.
+It achieves all of this through some [very special model hooks](https://github.com/pytorch/pytorch/blob/v2.4.1/torch/nn/parallel/distributed.py#L939) to sum all the gradients from all the ranks on all the ranks together:
+
+```python
+# NOTE: internal pytorch code found at https://github.com/pytorch/pytorch/blob/v2.4.1/torch/nn/parallel/distributed.py#L939
+gradient = param.grad / self.process_group.size()
+gradient = fcol.all_reduce(gradient, "sum", self.process_group)
+```
 
 ## Code Changes
 
