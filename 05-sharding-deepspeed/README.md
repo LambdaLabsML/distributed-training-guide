@@ -18,6 +18,8 @@ What this means:
 
 ## DeepSpeed ZeRO
 
+Install deepspeed: `pip install deepspeed`
+
 <img width="583" alt="image" src="https://github.com/user-attachments/assets/c2966a46-1807-4a56-92d4-977798087dd6">
 
 This is actually a collection of modes to shard more and more memory:
