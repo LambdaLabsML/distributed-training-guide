@@ -85,6 +85,8 @@ from torch.distributed.algorithms._checkpoint.checkpoint_wrapper import (
     checkpoint_wrapper,
 )
 
+model = FSDP(...)
+
 apply_activation_checkpointing(
     model, checkpoint_wrapper_fn=checkpoint_wrapper, auto_wrap_policy=wrap_policy
 )
