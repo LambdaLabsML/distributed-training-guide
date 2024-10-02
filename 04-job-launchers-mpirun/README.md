@@ -6,7 +6,19 @@ NOTE: This chapter's code builds off of chapter 3's code.
 
 ## mpirun
 
-There are two main flavors of MPI implementation, OpenMPI and MPICH. Either of them will work and we will use the OpenMPI implementation in this blog. You need to install OpenMPI.
+There are two main flavors of MPI implementation, OpenMPI and MPICH. Either of them will work and we will use the OpenMPI implementation in this blog. **You need to install OpenMPI**.
+
+Use MPI environment variables when initializing the process group:
+
+```diff
+-    dist.init_process_group()
++    dist.init_process_group(
++        rank=int(os.environ["OMPI_COMM_WORLD_RANK"]),
++        world_size=int(os.environ["OMPI_COMM_WORLD_SIZE"]),
++    )
+```
+
+Then launch:
 
 ```bash
 cd distributed-training-guide/04-job-launchers-mpirun
@@ -38,11 +50,3 @@ Notes:
 - We have to specify `MASTER_ADDR` and `MASTER_PORT` for pytorch to know how to talk to each other
 - In our code we have to pass the rank and world size based on the `$OMPI_COMM_WORLD_RANK` and `$OMPI_COMM_WORLD_SIZE` environment variables.
 - We use `$(which python)` to get the absolute path of our python interpreter - if you are launch from a head node instead of a worker node, you'll need to change this.
-
-```diff
--    dist.init_process_group()
-+    dist.init_process_group(
-+        rank=int(os.environ["OMPI_COMM_WORLD_RANK"]),
-+        world_size=int(os.environ["OMPI_COMM_WORLD_SIZE"]),
-+    )
-```
