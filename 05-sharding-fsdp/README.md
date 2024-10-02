@@ -1,6 +1,6 @@
 # Sharding Across GPUs
 
-NOTE: This chapter's code builds off of chapter 3's code.
+**NOTE: This chapter's code builds off of [chapter 3](../03-multi-node)'s code.**
 
 Up to this point we have assumed that both the model & optimizer fully fit on a single GPU. So each GPU during our training process fully contains a copy of the model and optimizer.
 
@@ -14,7 +14,7 @@ What this means:
 2. There are synchronization costs to un-shard and re-shard before and after each layer.
 3. Sharding does not reduce the peak memory cost of your biggest layer.
 
-**Sharding is a data parallel technique! NOT a model/tensor/pipeline parallel technique**
+Sharding is a **data parallel** technique! **NOT** a model/tensor/pipeline parallel technique.
 
 ## PyTorch FullyShardedDataParallel (FSDP)
 
