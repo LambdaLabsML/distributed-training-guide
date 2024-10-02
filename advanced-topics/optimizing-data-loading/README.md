@@ -12,6 +12,36 @@ It turns out data loading was consistently slower on one node, causing **all nod
 
 In this guide's case, since data loading is relatively fast, simply updating the number of workers and the prefetch factor fixed it. In more complex examples, other optimizations or preprocessing may be needed.
 
+## Loading data in parallel
+
+Most slow downs in this case all come from data size:
+
+1. If some of the processes read data more slowly, then they will already be behind. This can be due to disk reads being blocked, limits of open file descriptors, etc.
+2. If you have batches of different sizes, then the model forward/backward calls will take different amounts of time.
+
+Most of these can be handled simply by doing data loading in another process (via `num_workers` argument):
+
+```diff
+ dataloader = DataLoader(
+     train_data,
+     batch_size=args.batch_size,
+     collate_fn=default_data_collator,
++    num_workers=1,
++    prefetch_factor=2,
+     # NOTE: this sampler will split dataset evenly across workers
+     sampler=DistributedSampler(train_data, shuffle=True, drop_last=True),
+ )
+```
+
+This will cause the data loading to happen behind the scenes **in parallel to the batch processing**.
+
+You'll need to change the num_workers and prefetch factor settings based on a number of things:
+1. How big your batch size is
+2. How long a single row from your dataset takes to load/preprocess
+3. How fast your batches take to process
+
+If you have `num_workers>0`, then you just want the time to fully load a batch to be less than the time to process the batch.
+
 ## Measuring wait time
 
 We can measure this phenomena by adding some explicit `dist.barrier()` calls in our code with our timing wrapped around it:
@@ -57,38 +87,6 @@ index d5cb05c..26cadb8 100644
                  lr_scheduler.step()
 ```
 
-## Loading data in parallel
-
-Most slow downs in this case all come from data size:
-
-1. If some of the processes read data more slowly, then they will already be behind. This can be due to disk reads being blocked, limits of open file descriptors, etc.
-2. If you have batches of different sizes, then the model forward/backward calls will take different amounts of time.
-
-Most of these can be handled simply by doing data loading in another process (via `num_workers` argument):
-
-```diff --git a/03-multi-node/train_llm.py b/06-data-loading/train_llm.py
-index d5cb05c..26cadb8 100644
---- a/03-multi-node/train_llm.py
-+++ b/06-optimizing-data-loading/train_llm.py
-@@ -88,6 +88,8 @@ def main():
-         train_data,
-         batch_size=args.batch_size,
-         collate_fn=default_data_collator,
-+        num_workers=1,
-+        prefetch_factor=2,
-         # NOTE: this sampler will split dataset evenly across workers
-         sampler=DistributedSampler(train_data, shuffle=True, drop_last=True),
-     )
-```
-
-This will cause the data loading to happen behind the scenes **in parallel to the batch processing**.
-
-You'll need to change the num_workers and prefetch factor settings based on a number of things:
-1. How big your batch size is
-2. How long a single row from your dataset takes to load/preprocess
-3. How fast your batches take to process
-
-If you have `num_workers>0`, then you just want the time to fully load a batch to be less than the time to process the batch.
 
 ## Faster storage
 

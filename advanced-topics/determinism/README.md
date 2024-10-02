@@ -4,26 +4,6 @@
 
 See pytorch's documnetation on reproducibility: https://pytorch.org/docs/stable/notes/randomness.html#reproducibility
 
-```bash
-cd distributed-training-guide/97-determinism
-export CUBLAS_WORKSPACE_CONFIG=:4096:8
-export TORCHELASTIC_ERROR_FILE=../error.json
-export OMP_NUM_THREADS=1
-export HF_HOME=../.cache
-torchrun \
-    --rdzv-id multi-node \
-    --rdzv-backend c10d \
-    --rdzv-endpoint <IP ADDRESS of main node>:<port> \
-    --nnodes 2 \
-    --nproc-per-node gpu \
-    --redirects 3 \
-    --log-dir ../logs \
-    train_llm.py \
-    --experiment-name multi-node \
-    --dataset-name tatsu-lab/alpaca \
-    --model-name openai-community/gpt2
-```
-
 Notably we are also saving & restoring the rng states from various libraries, and explicitly seeding the workers for data loading.
 
 ## Code Changes
