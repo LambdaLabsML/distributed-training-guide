@@ -71,7 +71,6 @@ model = FullyShardedDataParallel(
     auto_wrap_policy=wrap_policy,
     sharding_strategy=ShardingStrategy.FULL_SHARD,
     cpu_offload=CPUOffload(offload_params=args.cpu_offload == "on"),
-    backward_prefetch=getattr(BackwardPrefetch, args.bwd_prefetch, default=None),
 )
 ```
 
@@ -114,7 +113,6 @@ Loading a checkpoint heavily depends on what library you use. If you are using t
 To quote the docs on this:
 
 > If True, then each FSDP module will broadcast module parameters and buffers from rank 0 to ensure that they are replicated across ranks (adding communication overhead to this constructor). This can help load state_dict checkpoints via load_state_dict in a memory efficient way. See FullStateDictConfig for an example of this.
-
 
 #### What layers to shard - the `auto_wrap_policy`
 
@@ -160,18 +158,6 @@ FSDP fully implements everything you can do with deepspeed! Here's how the stage
 This option **heavily** reduces memory requirements - at the cost of a lot of compute and memory bandwidth. The forward & backward pass runs on the GPU, then gradients are offloaded to CPU and the optimizer runs on the CPU.
 
 Note that this option will **NOT reduce peak GPU memory requirements** - each layer will still be fully executed in the GPU. However there may be more memory for each layer to use as more memory is stored in the CPU.
-
-#### Prefetching layer weights
-
-[BackwardPrefetch docs](https://pytorch.org/docs/stable/fsdp.html#torch.distributed.fsdp.BackwardPrefetch)
-
-These options are mainly for tuning **peak** memory usage vs throughput.
-
-| BackwardPrefetch | Peak Memory Usage per Layer                                                     |
-| ---------------- | ------------------------------------------------------------------------------- |
-| BACKWARD_PRE     | current set of parameters, next set of parameters, and current set of gradients |
-| BACKWARD_POST    | next set of parameters, and current set of gradients                            |
-| None             | -                                                                               |
 
 ### Sharded Checkpoints
 

@@ -198,10 +198,10 @@ Downloading model weights & tokenizer:
 Downloading data:
 
 ```diff
--    train_data = _load_and_preprocess_data(args, tokenizer, config)
-+    # NOTE: since this can download data, make sure to do the main process first
-+    with rank0_first():
-+        train_data = _load_and_preprocess_data(args, tokenizer, config)
+-train_data = _load_and_preprocess_data(args, tokenizer, config)
++# NOTE: since this can download data, make sure to do the main process first
++with rank0_first():
++    train_data = _load_and_preprocess_data(args, tokenizer, config)
 ```
 
 ### Using DistributedSampler
@@ -226,10 +226,10 @@ Note the `dist.barrier()` calls before and after we create the directory. **Thes
 Since we check to see if the experiment directory already exists right before creating the experiment directory, we need to ensure that **all processes have checked for its existence**. So the first `dist.barrier()` call ensures that all workers have already checked the existence of that. Then and only then can we create the directory on rank 0.
 
 ```diff
--    exp_dir.mkdir(parents=True, exist_ok=True)
-+    if rank == 0:
-+        exp_dir.mkdir(parents=True, exist_ok=True)
-+    dist.barrier()
+-exp_dir.mkdir(parents=True, exist_ok=True)
++if rank == 0:
++    exp_dir.mkdir(parents=True, exist_ok=True)
++dist.barrier()
 ```
 
 ### Grouped wandb runs
@@ -238,7 +238,7 @@ wandb allows you to create groups of runs, all grouped under a single unique gro
 
 Another standard method is to only call wandb.init and wandb.log on rank 0, but it is helpful for debugging to see the stats from each of the worker processes.
 
-See our chapter `93-wandb-configurations` for more details.
+See our chapter on [wandb-configurations](../advanced-topics/wandb-configurations/) for more details.
 
 ```diff
 wandb.init(

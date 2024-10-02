@@ -106,7 +106,6 @@ def main():
         auto_wrap_policy=wrap_policy,
         sharding_strategy=ShardingStrategy.FULL_SHARD,
         cpu_offload=CPUOffload(offload_params=args.cpu_offload == "on"),
-        backward_prefetch=getattr(BackwardPrefetch, args.bwd_prefetch, default=None),
     )
 
     _LOGGER.info(
@@ -396,11 +395,6 @@ def _get_parser() -> argparse.ArgumentParser:
         help="Only applies FSDP to modules with numel > this value.",
     )
     parser.add_argument("--cpu-offload", default="off", choices=["on", "off"])
-    parser.add_argument(
-        "--bwd-prefetch",
-        default="pre",
-        choices=["BACKWARD_PRE", "BACKWARD_POST", "off"],
-    )
     return parser
 
 
