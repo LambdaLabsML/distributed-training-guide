@@ -19,7 +19,7 @@ from transformers import (
     default_data_collator,
 )
 
-_LOGGER = logging.getLogger(__name__)
+LOGGER = logging.getLogger(__name__)
 
 
 def main():
@@ -33,8 +33,8 @@ def main():
     )
 
     # Helpful to log this information when running on multiple nodes to make sure all nodes have the same environment.
-    _LOGGER.info(os.environ)
-    _LOGGER.info(args)
+    LOGGER.info(os.environ)
+    LOGGER.info(args)
 
     # This guide assumes CUDA device is available, and does all training in bf16
     device = torch.device("cuda")
@@ -50,7 +50,7 @@ def main():
 
     train_data = _load_and_preprocess_data(args, tokenizer, config)
 
-    _LOGGER.info(f"{len(train_data)} training samples")
+    LOGGER.info(f"{len(train_data)} training samples")
 
     # Standard pytorch dataset iterator
     dataloader = DataLoader(
@@ -61,7 +61,7 @@ def main():
         collate_fn=default_data_collator,
     )
 
-    _LOGGER.info(f"{len(dataloader)} batches per epoch")
+    LOGGER.info(f"{len(dataloader)} batches per epoch")
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr)
 
@@ -71,7 +71,7 @@ def main():
     )
 
     exp_dir: Path = Path(args.save_dir) / args.experiment_name
-    _LOGGER.info(f"Experiment saving to {exp_dir}")
+    LOGGER.info(f"Experiment saving to {exp_dir}")
 
     # attempt resume
     state = {
@@ -93,7 +93,7 @@ def main():
             state = json.load(fp)
         resumed = True
 
-    _LOGGER.info(f"Resumed={resumed} | {state}")
+    LOGGER.info(f"Resumed={resumed} | {state}")
     exp_dir.mkdir(parents=True, exist_ok=True)
 
     # Initializing [wandb](https://wandb.ai/) - a very useful experiment tracking library.
@@ -116,7 +116,7 @@ def main():
     timers = {k: LocalTimer(device) for k in ["data", "forward", "backward", "update"]}
 
     for state["epoch"] in range(state["epoch"], args.num_epochs):
-        _LOGGER.info(f"Begin epoch {state['epoch']} at step {state['epoch_step']}")
+        LOGGER.info(f"Begin epoch {state['epoch']} at step {state['epoch_step']}")
 
         progress_bar = tqdm.tqdm(range(len(dataloader)))
         if state["epoch_step"] > 0:
@@ -169,7 +169,7 @@ def main():
                     },
                 }
 
-                _LOGGER.info(info)
+                LOGGER.info(info)
                 wandb.log(info, step=state["global_step"])
 
                 state["running_loss"] = 0
@@ -177,7 +177,7 @@ def main():
                     t.reset()
 
             if state["global_step"] % args.ckpt_freq == 0:
-                _LOGGER.info("Saving checkpoint.")
+                LOGGER.info("Saving checkpoint.")
                 torch.save(optimizer.state_dict(), exp_dir / "optimizer.pt")
                 torch.save(model.state_dict(), exp_dir / "model.pt")
                 torch.save(lr_scheduler.state_dict(), exp_dir / "lr_scheduler.pt")

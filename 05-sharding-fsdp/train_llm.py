@@ -40,7 +40,7 @@ from transformers import (
     default_data_collator,
 )
 
-_LOGGER = logging.getLogger(__name__)
+LOGGER = logging.getLogger(__name__)
 
 
 @record
@@ -59,9 +59,9 @@ def main():
         level=logging.INFO,
     )
 
-    _LOGGER.info(os.environ)
-    _LOGGER.info(args)
-    _LOGGER.info(f"local_rank={local_rank} rank={rank} world size={world_size}")
+    LOGGER.info(os.environ)
+    LOGGER.info(args)
+    LOGGER.info(f"local_rank={local_rank} rank={rank} world size={world_size}")
 
     device = torch.device(f"cuda:{local_rank}")
     dtype = torch.bfloat16
@@ -76,7 +76,7 @@ def main():
         with torch.device("meta"):
             model = AutoModelForCausalLM.from_config(config, torch_dtype=dtype)
 
-    _LOGGER.info(
+    LOGGER.info(
         f"Before FSDP: {torch.cuda.memory_stats(device)['allocated_bytes.all.current'] * 1e-9}gb allocated"
     )
 
@@ -108,7 +108,7 @@ def main():
         cpu_offload=CPUOffload(offload_params=args.cpu_offload == "on"),
     )
 
-    _LOGGER.info(
+    LOGGER.info(
         f"After FSDP: {torch.cuda.memory_stats(device)['allocated_bytes.all.current'] * 1e-9}gb allocated"
     )
 
@@ -116,7 +116,7 @@ def main():
     # NOTE: This assumes that the data is on a **shared** network drive, accessible to all processes
     with rank0_first():
         train_data = _load_and_preprocess_data(args, tokenizer, config)
-    _LOGGER.info(f"{len(train_data)} training samples")
+    LOGGER.info(f"{len(train_data)} training samples")
 
     dataloader = DataLoader(
         train_data,
@@ -125,7 +125,7 @@ def main():
         # NOTE: this sampler will split dataset evenly across workers
         sampler=DistributedSampler(train_data, shuffle=True, drop_last=True),
     )
-    _LOGGER.info(f"{len(dataloader)} batches per epoch")
+    LOGGER.info(f"{len(dataloader)} batches per epoch")
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr)
     lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
@@ -168,18 +168,18 @@ def main():
         with open(exp_dir / "state.json") as fp:
             state = json.load(fp)
         resumed = True
-    _LOGGER.info(f"Resumed={resumed} | {state}")
+    LOGGER.info(f"Resumed={resumed} | {state}")
     dist.barrier()
 
     if (exp_dir.is_mount() and rank == 0) or (
         not exp_dir.is_mount() and local_rank == 0
     ):
-        _LOGGER.info(f"Creating experiment root directory")
+        LOGGER.info(f"Creating experiment root directory")
         exp_dir.mkdir(parents=True, exist_ok=True)
     dist.barrier()
 
     (exp_dir / f"rank-{rank}").mkdir(parents=True, exist_ok=True)
-    _LOGGER.info(f"Worker saving to {exp_dir / f'rank-{rank}'}")
+    LOGGER.info(f"Worker saving to {exp_dir / f'rank-{rank}'}")
 
     wandb.init(
         project="distributed-training-guide",
@@ -203,7 +203,7 @@ def main():
     timers = {k: LocalTimer(device) for k in ["data", "forward", "backward", "update"]}
 
     for state["epoch"] in range(state["epoch"], args.num_epochs):
-        _LOGGER.info(f"Begin epoch {state['epoch']} at step {state['epoch_step']}")
+        LOGGER.info(f"Begin epoch {state['epoch']} at step {state['epoch_step']}")
 
         progress_bar = tqdm.tqdm(range(len(dataloader)), disable=rank > 0)
         if state["epoch_step"] > 0:
@@ -256,7 +256,7 @@ def main():
                     },
                 }
 
-                _LOGGER.info(info)
+                LOGGER.info(info)
                 wandb.log(info, step=state["global_step"])
 
                 torch.cuda.reset_peak_memory_stats(device)

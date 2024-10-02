@@ -73,7 +73,7 @@ Two main differences here:
 +    local_rank = args.local_rank or (rank % torch.cuda.device_count())
      world_size = dist.get_world_size()
  
-     _LOGGER.info(f"local_rank={local_rank} rank={rank} world size={world_size}")
+     LOGGER.info(f"local_rank={local_rank} rank={rank} world size={world_size}")
  
 @@ -73,10 +73,6 @@ def main():
      if len(tokenizer) > embedding_size:
@@ -85,7 +85,7 @@ Two main differences here:
 -
 @@ -89,9 +95,11 @@ def main():
      )
-     _LOGGER.info(f"{len(dataloader)} batches per epoch")
+     LOGGER.info(f"{len(dataloader)} batches per epoch")
  
 -    optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr)
 -    lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(

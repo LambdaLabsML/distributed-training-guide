@@ -73,7 +73,7 @@ index 38f3cf0..3233f81 100644
 +++ b/96-wandb-configurations/train_llm.py
 @@ -123,24 +123,32 @@ def main():
      (exp_dir / f"rank-{rank}").mkdir(parents=True, exist_ok=True)
-     _LOGGER.info(f"Worker saving to {exp_dir / f'rank-{rank}'}")
+     LOGGER.info(f"Worker saving to {exp_dir / f'rank-{rank}'}")
  
 -    wandb.init(
 -        project="distributed-training-guide",

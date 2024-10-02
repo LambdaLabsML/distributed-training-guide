@@ -43,7 +43,7 @@ index 24eacbd..0a3a029 100644
      torch.cuda.manual_seed_all(args.seed)
 @@ -84,6 +85,8 @@ def main():
          train_data = _load_and_preprocess_data(args, tokenizer, config)
-     _LOGGER.info(f"{len(train_data)} training samples")
+     LOGGER.info(f"{len(train_data)} training samples")
  
 +    g = torch.Generator()
 +    g.manual_seed(args.seed)
@@ -57,7 +57,7 @@ index 24eacbd..0a3a029 100644
 +        worker_init_fn=_seed_worker,
 +        generator=g,
      )
-     _LOGGER.info(f"{len(dataloader)} batches per epoch")
+     LOGGER.info(f"{len(dataloader)} batches per epoch")
  
 @@ -116,6 +121,13 @@ def main():
          lr_scheduler.load_state_dict(_load_to_device(exp_dir / "lr_scheduler.pt"))
@@ -71,7 +71,7 @@ index 24eacbd..0a3a029 100644
 +        torch.set_rng_state(rng_state["torch"])
 +        torch.cuda.set_rng_state(rng_state["cuda"][local_rank], device)
          resumed = True
-     _LOGGER.info(f"Resumed={resumed} | {state}")
+     LOGGER.info(f"Resumed={resumed} | {state}")
  
 @@ -208,11 +220,26 @@ def main():
                      torch.save(lr_scheduler.state_dict(), exp_dir / "lr_scheduler.pt")

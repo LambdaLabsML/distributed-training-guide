@@ -6,7 +6,7 @@ import os
 from torch import distributed as dist
 from torch.distributed.elastic.multiprocessing.errors import record
 
-_LOGGER = logging.getLogger(__name__)
+LOGGER = logging.getLogger(__name__)
 _STATE_PATH = "./toy-state.json"
 
 
@@ -20,7 +20,7 @@ def main():
     local_rank = os.environ["LOCAL_RANK"]
     world_size = dist.get_world_size()
 
-    _LOGGER.info(f"local_rank={local_rank} rank={rank} world size={world_size}")
+    LOGGER.info(f"local_rank={local_rank} rank={rank} world size={world_size}")
 
     state = {"num_steps": 0}
     if os.path.exists(_STATE_PATH):
@@ -31,7 +31,7 @@ def main():
 
     while True:
         value = random.random()
-        _LOGGER.info(f"[{rank=}] step={state['num_steps']} {value=}")
+        LOGGER.info(f"[{rank=}] step={state['num_steps']} {value=}")
         if value < 0.001:
             raise ValueError("Encountered fake bad value.")
 

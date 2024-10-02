@@ -31,7 +31,7 @@ index d5cb05c..26cadb8 100644
 +    }
  
      for state["epoch"] in range(state["epoch"], args.num_epochs):
-         _LOGGER.info(
+         LOGGER.info(
 @@ -168,13 +173,22 @@ def main():
                  # NOTE: for resuming
                  continue

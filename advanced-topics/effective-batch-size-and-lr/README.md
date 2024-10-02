@@ -53,7 +53,7 @@ index 38f3cf0..0cd2fac 100644
 +++ b/95-effective-batch-size-and-lr/train_llm.py
 @@ -89,9 +89,16 @@ def main():
      )
-     _LOGGER.info(f"{len(dataloader)} batches per epoch")
+     LOGGER.info(f"{len(dataloader)} batches per epoch")
  
 -    optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr)
 +    if args.lr_scaling == "static":
