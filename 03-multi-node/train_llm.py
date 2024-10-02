@@ -108,8 +108,9 @@ def main():
     _LOGGER.info(f"Resumed={resumed} | {state}")
     dist.barrier()
 
-    if rank == 0:
-        # NOTE: assuming directory is shared across all nodes, that's why we do rank instead of local_rank
+    if (exp_dir.is_mount() and rank == 0) or (
+        not exp_dir.is_mount() and local_rank == 0
+    ):
         _LOGGER.info(f"Creating experiment root directory")
         exp_dir.mkdir(parents=True, exist_ok=True)
     dist.barrier()
