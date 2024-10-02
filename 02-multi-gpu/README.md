@@ -41,10 +41,10 @@ We can actually achieve this in a very clever way. For sake of simplicity let's 
 Now let's focus on our training loop. The canonical one in pytorch is:
 
 ```python
-loss = model(**batch)
-optimizer.zero_grad(set_to_none=True)
-loss.backward()
-optimizer.step()
+loss = model(**batch) # 1. Forward pass asynchronously
+optimizer.zero_grad() # 2. Reset gradients asynchronously
+loss.backward()       # 3. calculates gradients asynchronously
+optimizer.step()      # 4. synchronize gradients & update weights
 ```
 
 The first 3 lines of the above can all be done asychronously. `loss.backward()` will compute gradients in each of our training processes. The clever bit is that `optimizer.step()` will synchronize the gradients across all processes before actually updating the model parameters.
@@ -128,39 +128,31 @@ You can manually check how many available cores there are and then split them ac
 
 One of the main changes is including `dist.init_process_group()`. You are required to call this before calling other dist apis.
 
+```diff
+ def main():
+     parser = _get_parser()
+     args = parser.parse_args()
++    dist.init_process_group()
+```
+
 Note that we are now:
 1. Setting our device using `rank`: `device = torch.device(f"cuda:{rank}")`
 2. Calling `torch.cuda.set_device(device)`, which is **required for dist calls to work**.
 
-```diff --git a/01-single-gpu/train_llm.py b/02-multi-gpu/train_llm.py
---- a/01-single-gpu/train_llm.py
-+++ b/02-multi-gpu/train_llm.py 
--    device = torch.device("cuda")
-+    dist.init_process_group()
-+
-+    rank = dist.get_rank()
-+    world_size = dist.get_world_size()
-+    assert world_size == torch.cuda.device_count()
-+
-+    _LOGGER.info(f"rank={rank} world size={world_size}")
-+
-+    device = torch.device(f"cuda:{rank}")
-     dtype = torch.bfloat16
-+    torch.cuda.set_device(device)
+```diff
+-device = torch.device(f"cuda")
++device = torch.device(f"cuda:{rank}")
+ dtype = torch.bfloat16
++torch.cuda.set_device(device)
 ```
 
 ### Using DistributedDataParallel
 
 As discussed earlier - this is for gradient synchronization and model weight syncing at initialization. We just call this after we've already constructed our models.
 
-```diff --git a/01-single-gpu/train_llm.py b/02-multi-gpu/train_llm.py
-index 66240cc..d17fcb0 100644
---- a/01-single-gpu/train_llm.py
-+++ b/02-multi-gpu/train_llm.py
-     if len(tokenizer) > embedding_size:
-         model.resize_token_embeddings(len(tokenizer))
- 
-+    model = DistributedDataParallel(model, device_ids=[rank], output_device=rank)
+```diff
+ model = AutoModelForCausalLM.from_config(config, torch_dtype=dtype).to(device)
++model = DistributedDataParallel(model, device_ids=[rank], output_device=rank)
 ```
 
 ### Downloading data in rank 0 first
@@ -185,15 +177,19 @@ def rank0_first():
     dist.barrier()
 ```
 
+Downloading model weights & tokenizer:
+
 ```diff
--    config = AutoConfig.from_pretrained(args.model_name, use_cache=False)
--    model = AutoModelForCausalLM.from_config(config, torch_dtype=dtype).to(device)
--    tokenizer = AutoTokenizer.from_pretrained(args.model_name)
-+    with rank0_first():
-+        config = AutoConfig.from_pretrained(args.model_name, use_cache=False)
-+        model = AutoModelForCausalLM.from_config(config, torch_dtype=dtype).to(device)
-+        tokenizer = AutoTokenizer.from_pretrained(args.model_name)
+-config = AutoConfig.from_pretrained(args.model_name, use_cache=False)
+-model = AutoModelForCausalLM.from_config(config, torch_dtype=dtype).to(device)
+-tokenizer = AutoTokenizer.from_pretrained(args.model_name)
++with rank0_first():
++    config = AutoConfig.from_pretrained(args.model_name, use_cache=False)
++    model = AutoModelForCausalLM.from_config(config, torch_dtype=dtype).to(device)
++    tokenizer = AutoTokenizer.from_pretrained(args.model_name)
 ```
+
+Downloading data:
 
 ```diff
 -    train_data = _load_and_preprocess_data(args, tokenizer, config)
@@ -206,18 +202,15 @@ def rank0_first():
 
 As discussed before, this will let each rank grab a different subset of the data.
 
-```diff --git a/01-single-gpu/train_llm.py b/02-multi-gpu/train_llm.py
---- a/01-single-gpu/train_llm.py
-+++ b/02-multi-gpu/train_llm.py
-dataloader = DataLoader(
-         train_data,
-         batch_size=args.batch_size,
--        shuffle=True,
--        drop_last=True,
-         collate_fn=default_data_collator,
-+        # NOTE: this sampler will split dataset evenly across workers
-+        sampler=DistributedSampler(train_data, shuffle=True, drop_last=True),
-     )
+```diff
+ dataloader = DataLoader(
+     train_data,
+     batch_size=args.batch_size,
+-    shuffle=True,
+-    drop_last=True,
+     collate_fn=default_data_collator,
++    sampler=DistributedSampler(train_data, shuffle=True, drop_last=True),
+ )
 ```
 
 ### Only creating experiment directory on rank 0
@@ -226,12 +219,9 @@ Note the `dist.barrier()` calls before and after we create the directory. **Thes
 
 Since we check to see if the experiment directory already exists right before creating the experiment directory, we need to ensure that **all processes have checked for its existence**. So the first `dist.barrier()` call ensures that all workers have already checked the existence of that. Then and only then can we create the directory on rank 0.
 
-```diff --git a/01-single-gpu/train_llm.py b/02-multi-gpu/train_llm.py
---- a/01-single-gpu/train_llm.py
-+++ b/02-multi-gpu/train_llm.py
+```diff
 +    dist.barrier()
 +    if rank == 0:
-+        _LOGGER.info(f"Creating experiment root directory")
 +        exp_dir.mkdir(parents=True, exist_ok=True)
 +    dist.barrier()
 -    exp_dir.mkdir(parents=True, exist_ok=True)
@@ -239,20 +229,13 @@ Since we check to see if the experiment directory already exists right before cr
 
 ### Grouped wandb runs
 
-wandb allows you to create groups of runs, all grouped under a single unique group name.
+wandb allows you to create groups of runs, all grouped under a single unique group name. Each one of our workers will be calling `wandb.init()` with the same group name. Then we can upload information from each worker to wandb, and visualize them all together!
 
-Basically the idea is that each one of our workers will be calling `wandb.init()` with the same group name. Then we can upload information from each worker to wandb, and visualize them all together!
+Another standard method is to only call wandb.init and wandb.log on rank 0, but it is helpful for debugging to see the stats from each of the worker processes.
 
-Another method is to only call wandb.init and wandb.log on rank 0, but it is helpful for debugging to see the stats from each of the worker processes.
+See our chapter `93-wandb-configurations` for more details.
 
-A few other notes:
-1. We change the wandb directory to be rank specific (`dir=exp_dir / f"rank-{rank}"`), since each rank process will be logging to it.
-2. The short name is now rank specific (`name=f"rank-{rank}"`), for easy visualization in the grouped graphs.
-3. The id for each run is now experiment_name and rank specific (`id=f"{args.experiment_name}-{rank}"`), so the grouped runs are maintained across resumes.
-
-```diff --git a/01-single-gpu/train_llm.py b/02-multi-gpu/train_llm.py
---- a/01-single-gpu/train_llm.py
-+++ b/02-multi-gpu/train_llm.py
+```diff
 wandb.init(
          project="distributed-training-guide",
 +        group=args.experiment_name,
@@ -279,22 +262,18 @@ wandb.init(
 
 We only want one of our ranks to save a checkpoint. Otherwise the ranks might write to the same file and corrupt each other.
 
-```diff --git a/01-single-gpu/train_llm.py b/02-multi-gpu/train_llm.py
---- a/01-single-gpu/train_llm.py
-+++ b/02-multi-gpu/train_llm.py
-                     t.reset()
- 
-             if state["global_step"] % args.ckpt_freq == 0:
--                torch.save(optimizer.state_dict(), exp_dir / "optimizer.pt")
--                torch.save(model.state_dict(), exp_dir / "model.pt")
--                torch.save(lr_scheduler.state_dict(), exp_dir / "lr_scheduler.pt")
--                with open(exp_dir / "state.json", "w") as fp:
--                    json.dump(state, fp)
-+                if rank == 0:
-+                    torch.save(optimizer.state_dict(), exp_dir / "optimizer.pt")
-+                    torch.save(model.state_dict(), exp_dir / "model.pt")
-+                    torch.save(lr_scheduler.state_dict(), exp_dir / "lr_scheduler.pt")
-+                    with open(exp_dir / "state.json", "w") as fp:
-+                        json.dump(state, fp)
-+                dist.barrier()
+```diff
+ if state["global_step"] % args.ckpt_freq == 0:
+-    torch.save(optimizer.state_dict(), exp_dir / "optimizer.pt")
+-    torch.save(model.state_dict(), exp_dir / "model.pt")
+-    torch.save(lr_scheduler.state_dict(), exp_dir / "lr_scheduler.pt")
+-    with open(exp_dir / "state.json", "w") as fp:
+-        json.dump(state, fp)
++    if rank == 0:
++        torch.save(optimizer.state_dict(), exp_dir / "optimizer.pt")
++        torch.save(model.state_dict(), exp_dir / "model.pt")
++        torch.save(lr_scheduler.state_dict(), exp_dir / "lr_scheduler.pt")
++        with open(exp_dir / "state.json", "w") as fp:
++             json.dump(state, fp)
++    dist.barrier()
 ```

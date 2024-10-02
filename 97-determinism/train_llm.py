@@ -120,8 +120,8 @@ def main():
         torch.cuda.set_rng_state(rng_state["cuda"][local_rank], device)
         resumed = True
     _LOGGER.info(f"Resumed={resumed} | {state}")
-
     dist.barrier()
+
     if rank == 0:
         # NOTE: assuming directory is shared across all nodes, that's why we do rank instead of local_rank
         exp_dir.mkdir(parents=True, exist_ok=True)

@@ -105,8 +105,8 @@ def main():
             state = json.load(fp)
         resumed = True
     _LOGGER.info(f"Resumed={resumed} | {state}")
-
     dist.barrier()
+
     if rank == 0:
         _LOGGER.info(f"Creating experiment root directory")
         exp_dir.mkdir(parents=True, exist_ok=True)

@@ -108,8 +108,8 @@ def main():
             state = json.load(fp)
         resumed = True
     _LOGGER.info(f"Resumed={resumed} | {state}")
-
     dist.barrier()
+
     if rank == 0:
         # NOTE: assuming directory is shared across all nodes, that's why we do rank instead of local_rank
         _LOGGER.info(f"Creating experiment root directory")
