@@ -1,8 +1,8 @@
 # Job Launchers
 
-Since it is quite cumbersome to manually SSH into every node and start a training job, there are various ways to launch distributed training jobs from a single node.
+NOTE: This chapter's code builds off of [chapter 3](../03-multi-node)'s code.
 
-NOTE: This chapter's code builds off of chapter 3's code.
+Since it is quite cumbersome to manually SSH into every node and start a training job, there are various ways to launch distributed training jobs from a single node.
 
 ## deepspeed
 
