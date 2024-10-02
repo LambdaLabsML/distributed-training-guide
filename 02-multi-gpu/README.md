@@ -220,11 +220,10 @@ Note the `dist.barrier()` calls before and after we create the directory. **Thes
 Since we check to see if the experiment directory already exists right before creating the experiment directory, we need to ensure that **all processes have checked for its existence**. So the first `dist.barrier()` call ensures that all workers have already checked the existence of that. Then and only then can we create the directory on rank 0.
 
 ```diff
-+    dist.barrier()
+-    exp_dir.mkdir(parents=True, exist_ok=True)
 +    if rank == 0:
 +        exp_dir.mkdir(parents=True, exist_ok=True)
 +    dist.barrier()
--    exp_dir.mkdir(parents=True, exist_ok=True)
 ```
 
 ### Grouped wandb runs
