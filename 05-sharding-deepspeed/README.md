@@ -1,6 +1,6 @@
 # Sharding Across GPUs
 
-NOTE: This chapter's code builds off of chapter 3's code.
+NOTE: This chapter's code builds off of [chapter 3](../03-multi-node/)'s code.
 
 Up to this point we have assumed that both the model & optimizer fully fit on a single GPU. So each GPU during our training process fully contains a copy of the model and optimizer.
 
