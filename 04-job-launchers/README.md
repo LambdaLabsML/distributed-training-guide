@@ -4,6 +4,13 @@
 
 Since it is quite cumbersome to manually SSH into every node and start a training job, there are various ways to launch distributed training jobs from a single node.
 
+Quick jump:
+- [Bash per node](#launching-torchrun-once-per-node)
+- [Bash per gpu](#launching-script-once-per-gpu)
+- [slurm](#slurm)
+- [mpi](#mpirun)
+- [deepspeed](#deepspeed)
+
 ## Bash Commands (xargs/ssh/tmux)
 
 Since the main thing we need to do is spawn processes on other machines, we can combine a few bash tools together to achieve this. This approach is one of the most lightweight approaches for this, and makes it easy to edit the commands any way you want. While it takes a bit to understand how all the bash commands work together, they are generally applicable to other problems as well.
