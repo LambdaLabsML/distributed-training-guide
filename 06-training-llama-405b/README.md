@@ -59,7 +59,7 @@ There's three parts to this:
 2. Using the [meta](../05-sharding-fsdp/README.md#initialization-after-sharding---the-meta-device) device on `rank>0`
 3. Using `from_config` instead of `from_pretrained` on `rank>0` so we don't need to download the weights on all the nodes.
    1. Note that if you have the weights on a shared network drive, you can just use `from_pretrained` instead.
-4. Passing `sync_module_states=True` in FSDP constructor
+4. Enabling [sync_module_states](../05-sharding-fsdp/README.md#sync_module_states) in FSDP constructor
 
 You might think of using the `device_map` feature of `transformers` - e.g. `device_map="auto"` tries to smartly fill up memory. However if you try this approach you'll end up with out of memory errors when FSDP tries to start sending memory to the GPU.
 
