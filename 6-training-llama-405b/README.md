@@ -33,7 +33,7 @@ Node local storage is **vastly** faster. For some numbers, while running this sc
 There's a download script in this repo for utility, run this on node 0:
 
 ```bash
-cd distributed-training-guide/10-training-llama-405b
+cd distributed-training-guide/6-training-llama-405b
 python download.py
 ```
 
@@ -121,7 +121,7 @@ optimizer.zero_grad(set_to_none=args.cpu_offload == "off")
 We provide a customized launch.sh script here based on the bash command for spawning torchrun on all available nodes:
 
 ```bash
-cd distributed-training-guide/10-training-llama-405b
+cd distributed-training-guide/6-training-llama-405b
 bash launch.sh # NOTE: this is non blocking
 ```
 
@@ -134,14 +134,14 @@ You can change the hostnames in the `hosts` file in this directory.
 The log files are really useful for monitoring the progress of everything. Here's a bash command for tailing all of them at once:
 
 ```bash
-cd distributed-training-guide/10-training-llama-405b
+cd distributed-training-guide/6-training-llama-405b
 find ../logs/ -name \*stderr.log | xargs tail -f
 ```
 
 Additionally, we have a top like utility script for monitoring the entire cluster at the top level of this directory:
 
 ```bash
-cd distributed-training-guide/10-training-llama-405b
+cd distributed-training-guide/6-training-llama-405b
 python ../top-cluster.py hosts
 ```
 
