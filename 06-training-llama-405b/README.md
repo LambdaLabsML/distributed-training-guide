@@ -74,13 +74,13 @@ else:
         model = AutoModelForCausalLM.from_config(config, torch_dtype=dtype)
 ```
 
-Then later, sync_module_states in FSDP constructor will make sure the weights are broadcasted from rank 0 to the other ranks.
+Then later, sync_module_states in [FSDP constructor](../05-sharding-fsdp/README.md#the-fsdp-constructor) will make sure the weights are broadcasted from rank 0 to the other ranks.
 
 ## Sharding Llama 405B
 
-To determine what layers you should shard is a complex thing. If you are using `transformers`, they include a private attribute on classes called [_no_split_modules](https://github.com/huggingface/transformers/blob/v4.45.1/src/transformers/models/llama/modeling_llama.py#L784) that will contain classes that you should not shard anything under them. E.g. for Llama this attribute just contains `LlamaDecoderLayer`. So that is what we will wrap! During testing I also found that sharding the `nn.Embedding` layer at the beginning of the network improved throughput and reduced memory usage.
+Determining what layers you should shard is complex. If you are using `transformers`, they include a private attribute on classes called [_no_split_modules](https://github.com/huggingface/transformers/blob/v4.45.1/src/transformers/models/llama/modeling_llama.py#L784) that will contain classes that you should not shard anything under them. E.g. for Llama this attribute just contains `LlamaDecoderLayer`. So that is what we will wrap! During testing I also found that sharding the `nn.Embedding` layer at the beginning of the network improved throughput and reduced memory usage.
 
-We can use the [transformer_auto_wrap_policy()](https://github.com/pytorch/pytorch/blob/main/torch/distributed/fsdp/wrap.py#L307C5-L307C33) to target the specific classes for those layers:
+We can use the [transformer_auto_wrap_policy()](https://github.com/pytorch/pytorch/blob/main/torch/distributed/fsdp/wrap.py#L307C5-L307C33) to target the specific classes for those layers, and pass that as our [auto_wrap_policy in the FSDP constructor](../05-sharding-fsdp/README.md#what-layers-to-shard---the-auto_wrap_policy):
 
 ```python
 from torch.distributed.fsdp.wrap import transformer_auto_wrap_policy
@@ -92,6 +92,8 @@ wrap_policy = functools.partial(
 )
 FSDP(..., auto_wrap_policy=wrap_policy)
 ```
+
+Please consult [our explanation on the FSDP constructor](../05-sharding-fsdp/README.md#the-fsdp-constructor) for more info.
 
 As a reminder - this will cause FSDP to gather all the parameters for each DecoderLayer (which includes Attention, Linear, and various norm modules), and shard them across the world. At the start of forward/backward pass FSDP will issue an all-gather so all the nodes have the full weights in memory, and at the end of the DecoderLayer forward/backward, it will free up the full weights again.
 
@@ -179,7 +181,7 @@ If you notice any of the nprocs go down or the power usage go down then you know
 
 ## Run statistics
 
-Running this with 64 H100 gpus (8 separate nodes) has the following stats:
+Training with `--seq-length 4096` and `--batch-size 1` on 64 H100 gpus (8 separate nodes) has the following stats:
 
 - ~30s per iteration (data/forward/backward/update). Breakdown is
   - data: ~2ms
