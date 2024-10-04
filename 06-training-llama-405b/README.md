@@ -129,8 +129,8 @@ torch.optim.AdamW(model.parameters(), lr=args.lr, fused=True)
 ```
 
 If you want to peek through the pytorch code:
-1. (_single_tensor_adamw())[https://github.com/pytorch/pytorch/blob/v2.4.1/torch/optim/adamw.py#L322] is the default implementation used
-2. (_fused_adamw())[https://github.com/pytorch/pytorch/blob/v2.4.1/torch/optim/adamw.py#L612] is the fused implementation
+1. [_single_tensor_adamw()](https://github.com/pytorch/pytorch/blob/v2.4.1/torch/optim/adamw.py#L322) is the default implementation used
+2. [_fused_adamw()](https://github.com/pytorch/pytorch/blob/v2.4.1/torch/optim/adamw.py#L612) is the fused implementation
 
 ## NOT de-allocating gradients
 
