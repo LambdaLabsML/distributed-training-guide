@@ -195,9 +195,6 @@ def main():
         exp_dir.mkdir(parents=True, exist_ok=True)
     dist.barrier()
 
-    (exp_dir / f"rank-{rank}").mkdir(parents=True, exist_ok=True)
-    LOGGER.info(f"Worker saving to {exp_dir / f'rank-{rank}'}")
-
     if rank == 0:
         wandb.init(
             project="distributed-training-guide",
