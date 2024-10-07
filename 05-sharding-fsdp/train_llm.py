@@ -180,23 +180,21 @@ def main():
     (exp_dir / f"rank-{rank}").mkdir(parents=True, exist_ok=True)
     LOGGER.info(f"Worker saving to {exp_dir / f'rank-{rank}'}")
 
-    wandb.init(
-        project="distributed-training-guide",
-        dir=exp_dir / f"rank-{rank}",
-        group=args.experiment_name,
-        name=f"rank-{rank}",
-        id=f"{args.experiment_name}-{rank}",
-        resume="must" if resumed else None,
-        save_code=True,
-        config={
-            "args": vars(args),
-            "training_data_size": len(train_data),
-            "num_batches": len(dataloader),
-            "rank": rank,
-            "local_rank": local_rank,
-            "world_size": world_size,
-        },
-    )
+    if rank == 0:
+        wandb.init(
+            project="distributed-training-guide",
+            dir=exp_dir,
+            name=args.experiment_name,
+            id=args.experiment_name,
+            resume="must" if resumed else None,
+            save_code=True,
+            config={
+                "args": vars(args),
+                "training_data_size": len(train_data),
+                "num_batches": len(dataloader),
+                "world_size": world_size,
+            },
+        )
 
     timers = {k: LocalTimer(device) for k in ["data", "forward", "backward", "update"]}
 
@@ -255,7 +253,8 @@ def main():
                 }
 
                 LOGGER.info(info)
-                wandb.log(info, step=state["global_step"])
+                if rank == 0:
+                    wandb.log(info, step=state["global_step"])
 
                 torch.cuda.reset_peak_memory_stats(device)
                 state["running_loss"] = 0
