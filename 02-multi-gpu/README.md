@@ -232,34 +232,36 @@ Since we check to see if the experiment directory already exists right before cr
 +dist.barrier()
 ```
 
-### Grouped wandb runs
+### wandb runs on rank 0
 
-wandb allows you to create groups of runs, all grouped under a single unique group name. Each one of our workers will be calling `wandb.init()` with the same group name. Then we can upload information from each worker to wandb, and visualize them all together!
+The standard approach for doing distributed wandb is to only invoke wandb on rank 0 process. This is very easy to implement and you don't have to worry about scaling issues as you add more ranks.
 
-Another standard method is to only call wandb.init and wandb.log on rank 0, but it is helpful for debugging to see the stats from each of the worker processes.
-
-See our chapter on [wandb-configurations](../advanced-topics/wandb-configurations/) for more details.
+There are other approaches you can use, like grouped wandb runs, which you can read about in our chapter on [wandb-configurations](../advanced-topics/wandb-configurations/) for more details.
 
 ```diff
-wandb.init(
++if rank == 0:
+     wandb.init(
          project="distributed-training-guide",
-+        group=args.experiment_name,
--        dir=exp_dir,
-+        dir=exp_dir / f"rank-{rank}",
--        name=args.experiment_name,
-+        name=f"rank-{rank}",
--        id=args.experiment_name,
-+        id=f"{args.experiment_name}-{rank}",
+         dir=exp_dir,
+         name=args.experiment_name,
+         id=args.experiment_name,
          resume="must" if resumed else None,
          save_code=True,
          config={
              "args": vars(args),
              "training_data_size": len(train_data),
              "num_batches": len(dataloader),
-+            "rank": rank,
-+            "world_size": world_size,
+             "rank": rank,
+             "world_size": world_size,
          },
      )
+```
+
+and
+
+```diff
++if rank == 0:
+     wandb.log(info, step=state["global_step"])
 ```
 
 ### Save checkpoint on rank 0
