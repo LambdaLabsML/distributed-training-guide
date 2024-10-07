@@ -127,9 +127,9 @@ def main():
         model, checkpoint_wrapper_fn=checkpoint_wrapper, auto_wrap_policy=wrap_policy
     )
 
-    # NOTE: since this can download data, make sure to do the main process first
-    # NOTE: This assumes that the data is on a **shared** network drive, accessible to all processes
-    with rank0_first():
+    # NOTE: since this can download data, make sure to do the main process first on each node
+    # since we manually specified HF_HOME to be a node local drive.
+    with rank_ordered(should_go_first=local_rank == 0):
         train_data = _load_and_preprocess_data(args, config)
     LOGGER.info(f"{len(train_data)} training samples")
 
@@ -356,12 +356,11 @@ def _load_and_preprocess_data(args, config):
 
 
 @contextmanager
-def rank0_first():
-    rank = dist.get_rank()
-    if rank == 0:
+def rank_ordered(*, should_go_first: bool):
+    if should_go_first:
         yield
     dist.barrier()
-    if rank > 0:
+    if not should_go_first:
         yield
     dist.barrier()
 
