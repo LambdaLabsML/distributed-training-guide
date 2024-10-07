@@ -42,7 +42,7 @@ xargs \
     --rdzv-id multi-node-tmux \
     --rdzv-backend c10d \
     --rdzv-endpoint $(head -n 1 hosts):5001 \
-    --nnodes $(wc -l < hosts) \
+    --nnodes $(grep -c '^' hosts) \
     --nproc-per-node gpu \
     --redirects 3 \
     --log-dir ../logs \
@@ -75,7 +75,7 @@ cat -n gpus | xargs -n2 \
     -e HF_HOME=../.cache \
     -e MASTER_ADDR=$(head -n 1 gpus) \
     -e MASTER_PORT=5001 \
-    -e WORLD_SIZE=$(wc -l < gpus) \
+    -e WORLD_SIZE=$(grep -c '^' gpus) \
     -e RANK=$(($0 - 1)) \
     $(which python) ../03-multi-node/train_llm.py \
     --experiment-name multi-node-tmux \
@@ -97,7 +97,7 @@ Here is how this command works:
 
 We need a couple of environment variables to make `dist.init_process_group()` work:
 1. `MASTER_ADDR`/`MASTER_PORT` is equivalent to the `rdzv` arguments with torchrun, they let each process connect to a single address. Since our `gpus` file contains a list of filenames, we just arbitrarily use the first one (`head -n 1 gpus`) as our master address
-2. `WORLD_SIZE` which we can just count the lines in our `gpus` file (`wc -l < gpus`) since each line represents a single GPU
+2. `WORLD_SIZE` which we can just count the lines in our `gpus` file (`grep -c '^' gpus`) since each line represents a single GPU
 3. `RANK` which we have from our enumerated cat command - though we have to subtract 1 since `cat` enumerates starting at 1 - `$(($0 - 1))`
 
 From there on we just paste our normal python command, note that we use `$(which python)` to get the absolute path to whatever interpreter executable we are using. 

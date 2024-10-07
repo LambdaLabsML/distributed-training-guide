@@ -2,7 +2,7 @@
 
 **NOTE: This chapter's code builds off of [chapter 5's FSDP code](../05-sharding-fsdp/).**
 
-Here we are going to utilize a huge cluster to train Llama 3.1 405B. **This does not utilize LORA!** We are actually fully training the weights of a 405b model in plain pytorch.
+Here we are going to utilize an 8 node cluster (64 H100 GPUs) to train Llama 3.1 405B. **This does not utilize LORA!** We are actually fully training the weights of a 405b model in plain pytorch.
 
 The next few sections go through various changes we have to make to our FSDP code from chapter 5 to make training a 405b model work.
 
@@ -48,6 +48,15 @@ There's a download script in this repo for utility, run this on node 0:
 cd distributed-training-guide/06-training-llama-405b
 python download.py
 ```
+
+And run this on the other nodes (to download config & tokenizer):
+
+```bash
+cd distributed-training-guide/06-training-llama-405b
+python download.py --skip-model
+```
+
+NOTE: you will likely have to log into your huggingface account using `huggingface-cli login`.
 
 ## Loading pretrained weights
 
@@ -178,6 +187,12 @@ python ../top-cluster.py hosts
 ```
 
 If you notice any of the nprocs go down or the power usage go down then you know that an error has occurred!
+
+To kill all the processes on all the nodes you can just kill the tmux sessions:
+
+```bash
+xargs -a hosts -I{} ssh {} tmux kill-session -t torchrun-llama-405b
+```
 
 ## Run statistics
 

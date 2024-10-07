@@ -13,16 +13,15 @@ xargs \
     ssh {} \
     tmux new-session -d -s torchrun-${EXPERIMENT_NAME} -c $(pwd) \
     -e HF_HOME=/home/ubuntu/.cache/huggingface \
-    -e TORCHELASTIC_ERROR_FILE=../error.json \
     -e OMP_NUM_THREADS=26 \
     $(which python) -m torch.distributed.run \
     --rdzv-id ${EXPERIMENT_NAME} \
     --rdzv-backend c10d \
     --rdzv-endpoint $(head -n 1 hosts):5001 \
-    --nnodes $(wc -l < hosts) \
-    --nproc-per-node gpu \
+    --nnodes $(grep -c '^' hosts) \
+    --nproc-per-node 8 \
     --redirects 3 \
-    --log-dir ../logs \
+    --log-dir ./logs \
     train_llm.py \
     --experiment-name ${EXPERIMENT_NAME} \
     --dataset-name Skylion007/openwebtext \
