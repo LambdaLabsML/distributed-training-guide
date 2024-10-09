@@ -69,10 +69,13 @@ while True:
             cluster_stats["power_usage"] += power_usage
             cluster_stats["num_gpus"] += 1
 
-    cluster_stats["util"] /= cluster_stats["num_gpus"]
-    cluster_stats["memory_usage"] /= cluster_stats["num_gpus"]
-    cluster_stats["power_usage"] /= cluster_stats["num_gpus"]
+    if cluster_stats["num_gpus"] > 0:
+        cluster_stats["util"] /= cluster_stats["num_gpus"]
+        cluster_stats["memory_usage"] /= cluster_stats["num_gpus"]
+        cluster_stats["power_usage"] /= cluster_stats["num_gpus"]
     for host in hosts:
+        if node_stats[host]["num_gpus"] == 0:
+            continue
         node_stats[host]["util"] /= node_stats[host]["num_gpus"]
         node_stats[host]["memory_usage"] /= node_stats[host]["num_gpus"]
         node_stats[host]["power_usage"] /= node_stats[host]["num_gpus"]
