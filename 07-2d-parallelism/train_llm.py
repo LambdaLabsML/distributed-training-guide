@@ -119,10 +119,17 @@ def main():
         model,
         mesh["tp"],
         {
+            # Each shard will get the full input (replicated), and then the outputs will be replicated.
+            # For Embedding, replicating outputs means that they are allreduced together (assuming summed, but not able to verify)
+            # Another assumption is that Embedding with indices that it doesn't have returns 0s
+            # (so when the shards are asked for an index that is present on another shard, they just return 0)
             "model.embed_tokens": tp.RowwiseParallel(),
-            # NOTE: not sure if we can do sequence parllel on this one?
+            # NOTE: not sure if we can do sequence parllel on this one? due to class construction
+            # TODO: does this shard weights at all?
             "model.norm": tp.SequenceParallel(),
             "lm_head": tp.ColwiseParallel(
+                # Assuming we can do sequence parallel for model.norm, we will be receiving the sharded input
+                # and we want the outputs to be replicated along all workers
                 input_layouts=Shard(1), output_layouts=Replicate()
             ),
         },
@@ -132,16 +139,19 @@ def main():
             layer,
             mesh["tp"],
             {
+                # SequenceParallel will apply sharding to sequence dimension. TODO: does this shard weights at all?
                 "input_layernorm": tp.SequenceParallel(),
                 # The input to self_attn (which is the output from the SequenceParallel input_layer_norm) will be sharded on dimension 1, but we wanted it to be the whole tensor.
                 # self_attn is what we are FSDP'ing down below. we don't apply TP here.
                 "self_attn": tp.PrepareModuleInput(
                     input_layouts=Shard(dim=1), desired_input_layouts=Replicate()
                 ),
+                # Another sharding along sequence dimension. TODO: does this shard weights at all?
                 "post_attention_layernorm": tp.SequenceParallel(),
                 "mlp": tp.PrepareModuleInput(
                     input_layouts=Shard(dim=1), desired_input_layouts=Replicate()
                 ),
+                # TODO Show graphic from pytorch lightning for explaining this.
                 "mlp.gate_proj": tp.ColwiseParallel(),
                 "mlp.up_proj": tp.ColwiseParallel(),
                 "mlp.down_proj": tp.RowwiseParallel(),

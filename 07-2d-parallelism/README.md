@@ -123,3 +123,4 @@ TODO
 ## Questions
 
 Does tp.SequenceParallel apply the sharding for you?
+How does RowParallelism work with Embedding? Won't shards not have access to the correct indices? Why Not ColParallelism?
