@@ -1,4 +1,4 @@
-# Advanced topics
+# Related topics
 
 This directory contains a list of additional topics that are adjacent to everything discussed in prior chapters.
 

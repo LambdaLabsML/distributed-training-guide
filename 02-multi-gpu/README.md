@@ -236,7 +236,7 @@ Since we check to see if the experiment directory already exists right before cr
 
 The standard approach for doing distributed wandb is to only invoke wandb on rank 0 process. This is very easy to implement and you don't have to worry about scaling issues as you add more ranks.
 
-There are other approaches you can use, like grouped wandb runs, which you can read about in our chapter on [wandb-configurations](../advanced-topics/wandb-configurations/) for more details.
+There are other approaches you can use, like grouped wandb runs, which you can read about in our chapter on [wandb-configurations](../related-topics/wandb-configurations/) for more details.
 
 ```diff
 +if rank == 0:
