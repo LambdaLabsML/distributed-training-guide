@@ -176,3 +176,8 @@ TODO
 4. `sharding_strategy=ShardingStrategy._HYBRID_SHARD_ZERO2` and `device_mesh=mesh`
 
 TODO
+
+### TP Groups Must have Identical inputs!!!
+
+TODO????
+
