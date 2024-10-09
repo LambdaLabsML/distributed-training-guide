@@ -13,35 +13,95 @@ In this chapter we are going to be adding tensor parallelism to our 405b trainin
 
 Some operations can be easily split among multiple workers without having to share any parameters. If you remember with fully sharded data parallel, we still have to gather all the weights onto each node. That is due to the way the operations we were wrapping worked.
 
-Let's think about applying a ReLU Activation to a tensor at first - well we could easily split the input tensor across our workers and all the workers could separately apply the ReLU function to each of their parts.
-
-Tensor Parallelism is most often applied with Linear layers, which occur a lot in Transformer architecture. Basically the weight & bias matrix in the Linear layer are split up across your workers, and then when applying the forward to the tensor, only the tensor needs to be split across the workers, not the weights.
+Tensor Parallelism is most often applied with Linear layers, which occur a lot in Transformer architecture. Basically the weight & bias matrix in the Linear layer are split up across your workers, and then when applying the forward to the tensor, only the input tensor needs to be split across the workers, not the weights.
 
 This ends up being much cheaper/faster!
 
-## Pytorch Reference Docs
+## Useful References
 
 For completeness here are the relevant docs/guides from pytorch on how to achieve this:
-- [API docs](https://pytorch.org/docs/stable/distributed.tensor.parallel.html#tensor-parallelism-torch-distributed-tensor-parallel)
+- [TP API docs](https://pytorch.org/docs/stable/distributed.tensor.parallel.html#tensor-parallelism-torch-distributed-tensor-parallel)
 - [2d Parallelism Tutorial](https://pytorch.org/tutorials/intermediate/TP_tutorial.html#large-scale-transformer-model-training-with-tensor-parallel-tp)
 - [Device Mesh tutorial](https://pytorch.org/tutorials/recipes/distributed_device_mesh.html)
+- [PyTorch Lightning TP Tutorial](https://lightning.ai/lightning-ai/studios/tensor-parallelism-supercharging-large-model-training-with-pytorch-lightning)
+
+## The Tensor Parallel API
+
+Here we are going to give a brief explanation of how the api we are going to be using works.
+
+- [tp.RowwiseParallel()]() shards the module's weights in a row wise fashion.
+    - Inputs by default are sharded on last dimension
+    - Outputs by default are replicated on all workers
+- [tp.ColwiseParallel()]() shards the module's weights in a col wise fashion.
+    - Inputs by default are replicated on all workers
+    - Outputs by default are sharded on last dimension
+- [tp.SequenceParallel()]() shards the input/output across dimension 1. Module weights are NOT sharded.
+- [tp.loss_parallel()]() shards CrossEntropyLoss computation. **Requrires model output to be sharded on class dimension**
+- [tp.PrepareModuleInput()]() let's you change the sharding configuration of input tensors
+- [torch.distributed._tensor.Shard(dim=X)]() indicates a tensor should be sharded along dimension X
+- [torch.distributed._tensor.Replicate()]() indicates a tensor should be replicated among all workers.
+
+How all of these things interact is actually very subtle and complex, which is why this guide is useful!
+
+You can also change most of the default behavior with arguments to these classes. For example, you can change RowwiseParallel to assume the input is replicated instead of sharded.
+
+### Colwise Linear
+
+TODO
+
+![image](https://storage.googleapis.com/lightning-avatars/litpages/01hyz8vg94nc6nk7t10rt8jpt1/a2fe38f3-4a73-4b0f-80da-c273d14cadd9.jpeg)
+
+Source: [PyTorchLightning](https://lightning.ai/lightning-ai/studios/tensor-parallelism-supercharging-large-model-training-with-pytorch-lightning#column-wise-parallel)
+
+### Rowwise Linear
+
+TODO
+
+![image](https://storage.googleapis.com/lightning-avatars/litpages/01hyz8vg94nc6nk7t10rt8jpt1/6b715900-897d-4b3d-a1b6-8ce48f213acf.jpeg)
+
+Source: [PyTorchLightning](https://lightning.ai/lightning-ai/studios/tensor-parallelism-supercharging-large-model-training-with-pytorch-lightning#row-wise-parallel)
+
+
+### Chaining Linears
+
+TODO
+
+![image](https://storage.googleapis.com/lightning-avatars/litpages/01hyz8vg94nc6nk7t10rt8jpt1/a1bc6e8a-7146-44c6-b6cf-eec124cfbf74.jpeg)
+
+Source: [PyTorchLightning](https://lightning.ai/lightning-ai/studios/tensor-parallelism-supercharging-large-model-training-with-pytorch-lightning#combined-parallel-layers)
+
+### Parallelizing Embedding with RowwiseParallel
+
+TODO
+
+### Parallelizing Norm Layers with SequenceParallel
+
+TODO
+
+### Parallelizing Cross Entropy Loss
+
+TODO
 
 ## Implementation
 
-There are a couple of parts to implementing this. For starters we are going to need what pytorch calls a [Device Mesh](https://pytorch.org/docs/stable/distributed.html#torch.distributed.device_mesh.DeviceMesh). Why? Because this will let us split workers into groups based on what node they are on.
+There are a couple of parts to implementing this. For starters we are going to need what pytorch calls a [Device Mesh](https://pytorch.org/docs/stable/distributed.html#torch.distributed.device_mesh.DeviceMesh). Why? Because this will let us split our GPUs into groups based on what node they are on.
 
 For a high level view first, we are going to:
 
-1. Internal to each node do tensor parallelism (so split Linear layers up across the node)
-2. Across nodes do data parallelism (what we've been doing with FSDP so far)
+1. Tensor parallelism in each node (so split Linear layers up across the node)
+2. Data parallelism (FSDP) across nodes
 
-A DeviceMesh helps us work with this.
+A DeviceMesh helps us achieve this.
 
 ```python
 # NOTE: assumes all nodes have the same number of gpus
-num_local_gpus = torch.cuda.device_count()
-num_nodes = dist.get_world_size() // num_local_gpus
-mesh = dist.device_mesh.init_device_mesh("cuda", (num_nodes, num_local_gpus), ("dp", "tp"))
+gpus_on_node = torch.cuda.device_count()
+num_nodes = dist.get_world_size() // gpus_on_node
+mesh = dist.device_mesh.init_device_mesh(
+    "cuda",
+    (num_nodes, gpus_on_node),
+    mesh_dim_names=("dp", "tp"),
+)
 ```
 
 ### Model Architecture Reference
@@ -78,14 +138,12 @@ LlamaForCausalLM(
 )
 ```
 
-TODO we apply FSDP to the decoder layer block, but need to apply TP to the linear layers/MLP?
-
 ### Applying tensor parallelism to our model
 
 Note that this is done *before* passing our model to FSDP. Luckily this all works very seamlessly with meta models.
 
 ```python
-from torch.distributed.tensor.parallel import ColwiseParallel, RowwiseParallel, parallelize_module
+import torch.distributed.tensor.parallel as tp
 ```
 TODO
 
@@ -118,9 +176,3 @@ TODO
 4. `sharding_strategy=ShardingStrategy._HYBRID_SHARD_ZERO2` and `device_mesh=mesh`
 
 TODO
-
-
-## Questions
-
-Does tp.SequenceParallel apply the sharding for you?
-How does RowParallelism work with Embedding? Won't shards not have access to the correct indices? Why Not ColParallelism?
