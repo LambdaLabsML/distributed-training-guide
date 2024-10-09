@@ -7,6 +7,8 @@ if [ ! -f ./hosts ]; then
     exit 1
 fi
 
+ssh $(head -n 1 hosts) $(which wandb) login
+
 xargs \
     -a hosts \
     -I {} \
