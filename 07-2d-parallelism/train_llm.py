@@ -137,6 +137,10 @@ def main():
         },
     )
     for layer in model.model.layers:
+        # Have the adjust these values since we are sharding the linear layers
+        layer.self_attn.num_heads //= mesh["tp"].size()
+        layer.self_attn.num_key_value_heads //= mesh["tp"].size()
+
         tp.parallelize_module(
             layer,
             mesh["tp"],
@@ -144,10 +148,14 @@ def main():
                 # SequenceParallel will apply sharding to sequence dimension.
                 "input_layernorm": tp.SequenceParallel(),
                 # The input to self_attn (which is the output from the SequenceParallel input_layer_norm) will be sharded on dimension 1, but we wanted it to be the whole tensor.
-                # self_attn is what we are FSDP'ing down below. we don't apply TP here.
                 "self_attn": tp.PrepareModuleInput(
                     input_layouts=Shard(dim=1), desired_input_layouts=Replicate()
                 ),
+                # TODO talk about how this all works together (go through line by line in the flash attn forward to show dims)
+                "self_attn.q_proj": tp.ColwiseParallel(),
+                "self_attn.k_proj": tp.ColwiseParallel(),
+                "self_attn.v_proj": tp.ColwiseParallel(),
+                "self_attn.o_proj": tp.RowwiseParallel(),
                 # TODO should we apply tensor parallel to self_attn?
                 # Another sharding along sequence dimension.
                 "post_attention_layernorm": tp.SequenceParallel(),
@@ -162,16 +170,14 @@ def main():
         )
 
     LOGGER.info(f"Before FSDP: {_get_cuda_mem_stats()}")
+    torch.cuda.empty_cache()
 
     model = FullyShardedDataParallel(
         model,
         device_id=local_rank,
         param_init_fn=lambda m: m.to_empty(device=device, recurse=False),
+        # TODO how do each of these values work with 
         sync_module_states=True,
-        auto_wrap_policy=functools.partial(
-            transformer_auto_wrap_policy,
-            transformer_layer_cls={LlamaFlashAttention2},
-        ),
         sharding_strategy=ShardingStrategy.FULL_SHARD,
         cpu_offload=CPUOffload(offload_params=args.cpu_offload == "on"),
         device_mesh=mesh["dp"],
@@ -180,6 +186,7 @@ def main():
 
     LOGGER.info(f"After FSDP: {_get_cuda_mem_stats()}")
     LOGGER.info(f"FSDP architecture: {model}")
+    torch.cuda.empty_cache()
 
     # Applying gradient checkpointing - note that only the LlamaDecoderLayer supports this,
     # so we can just reuse our existing wrap_policy.
