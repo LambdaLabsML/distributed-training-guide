@@ -129,9 +129,9 @@ def main():
             "model.norm": tp.SequenceParallel(),
             "lm_head": tp.ColwiseParallel(
                 # Assuming we can do sequence parallel for model.norm, we will be receiving the sharded input
-                # and we want the outputs to be sharded on the last dimension.
-                # we need to do this for use with loss parallel!!
                 input_layouts=Shard(1),
+                # and we want the outputs to be sharded on the last dimension, which is the default behavior,
+                # but we need to convert this to a Tensor
                 use_local_output=False,
             ),
         },
@@ -148,6 +148,7 @@ def main():
                 "self_attn": tp.PrepareModuleInput(
                     input_layouts=Shard(dim=1), desired_input_layouts=Replicate()
                 ),
+                # TODO should we apply tensor parallel to self_attn?
                 # Another sharding along sequence dimension.
                 "post_attention_layernorm": tp.SequenceParallel(),
                 "mlp": tp.PrepareModuleInput(
@@ -205,7 +206,13 @@ def main():
         num_workers=1,
         prefetch_factor=2,
         # NOTE: this sampler will split dataset evenly across workers
-        sampler=DistributedSampler(train_data, shuffle=True, drop_last=True),
+        sampler=DistributedSampler(
+            train_data,
+            shuffle=True,
+            drop_last=True,
+            num_replicas=mesh["dp"].size(),  # equivalent to `num_nodes`
+            rank=mesh["dp"].get_local_rank(),  # equivalent to `rank // num_nodes`
+        ),
     )
     LOGGER.info(f"{len(dataloader)} batches per epoch")
 
