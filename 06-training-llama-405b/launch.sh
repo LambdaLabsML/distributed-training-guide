@@ -16,6 +16,8 @@ xargs \
     tmux new-session -d -s torchrun-${EXPERIMENT_NAME} -c $(pwd) \
     -e HF_HOME=/home/ubuntu/.cache/huggingface \
     -e OMP_NUM_THREADS=26 \
+    -e NCCL_CROSS_NIC=1 \
+    -e TORCH_NCCL_AVOID_RECORD_STREAMS=1 \
     $(which python) -m torch.distributed.run \
     --rdzv-id ${EXPERIMENT_NAME} \
     --rdzv-backend c10d \
