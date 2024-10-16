@@ -94,23 +94,13 @@ def main():
 
     LOGGER.info(f"Loading model from HF_HOME={os.environ['HF_HOME']}")
 
-    model: LlamaForCausalLM
     config = AutoConfig.from_pretrained(args.model_name, use_cache=False)
-    if rank == 0:
-        with torch.device("cpu"):
-            model = AutoModelForCausalLM.from_pretrained(
-                args.model_name,
-                torch_dtype=dtype,
-                attn_implementation="flash_attention_2",
-                use_cache=False,
-            )
-    else:
-        with torch.device("meta"):
-            model = AutoModelForCausalLM.from_config(
-                config,
-                torch_dtype=dtype,
-                attn_implementation="flash_attention_2",
-            )
+    model: LlamaForCausalLM = AutoModelForCausalLM.from_pretrained(
+        args.model_name,
+        torch_dtype=dtype,
+        attn_implementation="flash_attention_2",
+        use_cache=False,
+    )
     LOGGER.info(f"{sum(p.numel() for p in model.parameters())} model parameters")
 
     LOGGER.info(f"Before Tensor Parallel: {_get_cuda_mem_stats()}")
@@ -176,10 +166,12 @@ def main():
         model,
         device_id=local_rank,
         param_init_fn=lambda m: m.to_empty(device=device, recurse=False),
-        # TODO how do each of these values work with 
-        sync_module_states=True,
-        sharding_strategy=ShardingStrategy.FULL_SHARD,
-        cpu_offload=CPUOffload(offload_params=args.cpu_offload == "on"),
+        auto_wrap_policy=functools.partial(
+            transformer_auto_wrap_policy,
+            transformer_layer_cls={LlamaDecoderLayer},
+        ),
+        cpu_offload=CPUOffload(offload_params=True),
+        sharding_strategy=ShardingStrategy.NO_SHARD,
         device_mesh=mesh["dp"],
         use_orig_params=True,
     )
@@ -195,7 +187,6 @@ def main():
         checkpoint_wrapper_fn=checkpoint_wrapper,
         auto_wrap_policy=functools.partial(
             transformer_auto_wrap_policy,
-            # TODO include embedding?
             transformer_layer_cls={LlamaDecoderLayer},
         ),
     )
@@ -488,7 +479,6 @@ def _get_parser() -> argparse.ArgumentParser:
     parser.add_argument("--batch-size", default=1, type=int)
     parser.add_argument("--log-freq", default=100, type=int)
     parser.add_argument("--ckpt-freq", default=500, type=int)
-    parser.add_argument("--cpu-offload", default="on", choices=["on", "off"])
     parser.add_argument("--seq-length", default=None, type=int)
     return parser
 

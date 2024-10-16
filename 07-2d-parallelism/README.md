@@ -11,11 +11,17 @@ In this chapter we are going to be adding tensor parallelism to our 405b trainin
 
 ## Basics: What is tensor parallelism?
 
-Some operations can be easily split among multiple workers without having to share any parameters. If you remember with fully sharded data parallel, we still have to gather all the weights onto each node. That is due to the way the operations we were wrapping worked.
+In one sentence: a single node is now the "unit" instead of a single gpu.
 
-Tensor Parallelism is most often applied with Linear layers, which occur a lot in Transformer architecture. Basically the weight & bias matrix in the Linear layer are split up across your workers, and then when applying the forward to the tensor, only the input tensor needs to be split across the workers, not the weights.
+We will be treating an entire node as the execution unit:
+1. The model is sharded internal to the node
+2. Every GPU on the node receives **the same input**
 
-This ends up being much cheaper/faster!
+It reduces the world size by however many GPUs are in your world, meaning the cost of allgathers/allreduces is reduced. This becomes a big factor when your cluster is large.
+
+It's a very effective way to scale up!
+
+Note that this can only really be applied to certain modules, but most of the modules in an LLM work with it.
 
 ## Useful References
 
@@ -104,6 +110,20 @@ mesh = dist.device_mesh.init_device_mesh(
 )
 ```
 
+### All GPUs on a node must have Identical inputs!!!
+
+Again, we are now treating the node as the indivisible "unit", so all GPUs on a node must be working on the same input.
+
+We achieve this by setting the DistributedSampler's rank/world_size explicitly:
+
+```python
+sampler=DistributedSampler(
+    ...,
+    num_replicas=mesh["dp"].size(),  # equivalent to `num_nodes`
+    rank=mesh["dp"].get_local_rank(),  # equivalent to `rank // num_nodes`
+)
+```
+
 ### Model Architecture Reference
 
 For reference for the next couple of sections, here is the architecture for 405B:
@@ -156,28 +176,5 @@ For this, we can just pass our dp mesh directly to the FSDP constructor:
 model = FSDP(..., device_mesh=mesh["dp"])
 ```
 
-Note that this allows us to try other versions of sharding.
-
-You can also just pass the entire mesh into device_mesh. TODO what should be done??
-
-Here are three options:
-1. `sharding_strategy=ShardingStrategy.FULL_SHARD` and `device_mesh=mesh["dp"]`
-
 TODO
-
-2. `sharding_strategy=ShardingStrategy.SHARD_GRAD_OP` and `device_mesh=mesh`
-
-TODO
-
-3. `sharding_strategy=ShardingStrategy.HYBRID_SHARD` and `device_mesh=mesh`
-
-TODO
-
-4. `sharding_strategy=ShardingStrategy._HYBRID_SHARD_ZERO2` and `device_mesh=mesh`
-
-TODO
-
-### TP Groups Must have Identical inputs!!!
-
-TODO????
 
