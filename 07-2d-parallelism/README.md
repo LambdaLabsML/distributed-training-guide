@@ -15,11 +15,20 @@ In one sentence: a single node is now the "unit" instead of a single gpu.
 
 We will be treating an entire node as the execution unit:
 1. The model is sharded internal to the node
-2. Every GPU on the node receives **the same input**
+2. Every *GPU* on the node receives **the same input**
 
-It reduces the world size by however many GPUs are in your world, meaning the cost of allgathers/allreduces is reduced. This becomes a big factor when your cluster is large.
+It reduces the world size by however many GPUs are in your node, meaning the cost of allgathers/allreduces is reduced. This becomes a big factor when your cluster is large.
 
 It's a very effective way to scale up!
+
+Here are the benefits of this:
+1. The peak GPU memory is reduced - now instead of each GPU fully loading up the full weights for each layer, they now only load `1/num_gpus` of the weights.
+2. We now have `per GPU memory * num_gpus` as our amount of memory to use for each layer.
+3. Less allgather/allreduce cost
+
+Here are the downsides:
+1. The global batch size is reduced by the number of gpus (`tp_global_batch_size = global_batch_size / num_gpus_per_node`)
+2. BUT we can now hopefully increase the local batch size per node, since we are reducing peak GPU memory.
 
 Note that this can only really be applied to certain modules, but most of the modules in an LLM work with it.
 
@@ -97,7 +106,7 @@ For a high level view first, we are going to:
 1. Tensor parallelism in each node (so split Linear layers up across the node)
 2. Data parallelism (FSDP) across nodes
 
-A DeviceMesh helps us achieve this.
+### Grouping GPUs with Device Mesh
 
 ```python
 # NOTE: assumes all nodes have the same number of gpus
@@ -123,6 +132,14 @@ sampler=DistributedSampler(
     rank=mesh["dp"].get_local_rank(),  # equivalent to `rank // num_nodes`
 )
 ```
+
+### Loading weights
+
+Since we are now splitting up the weights internal to each node, we can't really broadcast the weights from rank 0 anymore, because rank 0 doesn't have the full weights (it has a shard of the weights). We really want to replicate the entire node 0 on all the other nodes, but at the time of writing this there isn't a way to do that without handwritten code.
+
+It is unclear to me whether sync_module_states with HYBRID_SHARD achieves the desired result.
+
+TODO
 
 ### Model Architecture Reference
 
@@ -162,19 +179,9 @@ LlamaForCausalLM(
 
 Note that this is done *before* passing our model to FSDP. Luckily this all works very seamlessly with meta models.
 
-```python
-import torch.distributed.tensor.parallel as tp
-```
 TODO
 
-
 ### Using our mesh with FSDP
-
-For this, we can just pass our dp mesh directly to the FSDP constructor:
-
-```python
-model = FSDP(..., device_mesh=mesh["dp"])
-```
 
 TODO
 
