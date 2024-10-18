@@ -46,3 +46,7 @@ This tutorial uses `wandb` as an experiment tracker.
 ```bash
 wandb login
 ```
+
+<p align="center">
+🦄 Other exciting ML projects at Lambda: <a href="https://news.lambdalabs.com/news/today">ML Times</a>, <a href="https://lambdalabsml.github.io/Open-Sora/introduction/">Text2Video</a>, <a href="https://lambdalabs.com/gpu-benchmarks">GPU Benchmark</a>.
+</p>
