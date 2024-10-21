@@ -220,6 +220,7 @@ def main():
         if state["epoch_step"] > 0:
             progress_bar.update(state["epoch_step"])
 
+        dataloader.sampler.set_epoch(state["epoch"])
         batches = iter(dataloader)
 
         for i_step in range(len(dataloader)):

@@ -138,6 +138,8 @@ def main():
         if state["epoch_step"] > 0:
             progress_bar.update(state["epoch_step"])
 
+        # We need to do this so we shuffle differently on each epoch in a reproducible way.
+        dataloader.sampler.set_epoch(state["epoch"])
         batches = iter(dataloader)
 
         for i_step in range(len(dataloader)):

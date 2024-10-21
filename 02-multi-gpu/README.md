@@ -219,6 +219,16 @@ As discussed before, this will let each rank grab a different subset of the data
  )
 ```
 
+You also need to call [DistributedSampler.set_epoch](https://pytorch.org/docs/stable/data.html#torch.utils.data.distributed.DistributedSampler). Here's the quote from the pytorch doc on this:
+
+```diff
++dataloader.sampler.set_epoch(state["epoch"])
+ batches = iter(dataloader)
+```
+
+> In distributed mode, calling the set_epoch() method at the beginning of each epoch before creating the DataLoader iterator is necessary to make shuffling work properly across multiple epochs. Otherwise, the same ordering will be always used.
+
+
 ### Only creating experiment directory on rank 0
 
 Note the `dist.barrier()` calls before and after we create the directory. **These are very important!**
