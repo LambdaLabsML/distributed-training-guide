@@ -19,12 +19,8 @@ from torch.distributed.algorithms._checkpoint.checkpoint_wrapper import (
     apply_activation_checkpointing,
     checkpoint_wrapper,
 )
+from torch.distributed._composable.fsdp import fully_shard, CPUOffloadPolicy
 from torch.distributed.elastic.multiprocessing.errors import record
-from torch.distributed.fsdp.fully_sharded_data_parallel import (
-    FullyShardedDataParallel,
-    CPUOffload,
-    ShardingStrategy,
-)
 from torch.distributed.fsdp.wrap import transformer_auto_wrap_policy
 from torch.distributed.checkpoint.state_dict import (
     get_state_dict,
@@ -95,15 +91,13 @@ def main():
     LOGGER.info(f"Loading model from HF_HOME={os.environ['HF_HOME']}")
 
     config = AutoConfig.from_pretrained(args.model_name, use_cache=False)
-    model: LlamaForCausalLM = AutoModelForCausalLM.from_pretrained(
-        args.model_name,
-        torch_dtype=dtype,
-        attn_implementation="flash_attention_2",
-        use_cache=False,
-    )
+    with torch.device("meta"):
+        model: LlamaForCausalLM = AutoModelForCausalLM.from_config(
+            config,
+            torch_dtype=dtype,
+            attn_implementation="flash_attention_2"
+        )
     LOGGER.info(f"{sum(p.numel() for p in model.parameters())} model parameters")
-
-    LOGGER.info(f"Before Tensor Parallel: {_get_cuda_mem_stats()}")
 
     tp.parallelize_module(
         model,
@@ -159,26 +153,12 @@ def main():
             },
         )
 
-    LOGGER.info(f"Before FSDP: {_get_cuda_mem_stats()}")
-    torch.cuda.empty_cache()
+    for layer in model.model.layers:
+        # NOTE: mesh=mesh["dp"] is FSDP, mesh=mesh is HSDP
+        fully_shard(layer, mesh=mesh["dp"], offload_policy=CPUOffloadPolicy())
 
-    model = FullyShardedDataParallel(
-        model,
-        device_id=local_rank,
-        param_init_fn=lambda m: m.to_empty(device=device, recurse=False),
-        auto_wrap_policy=functools.partial(
-            transformer_auto_wrap_policy,
-            transformer_layer_cls={LlamaDecoderLayer},
-        ),
-        cpu_offload=CPUOffload(offload_params=True),
-        sharding_strategy=ShardingStrategy.NO_SHARD,
-        device_mesh=mesh["dp"],
-        use_orig_params=True,
-    )
-
-    LOGGER.info(f"After FSDP: {_get_cuda_mem_stats()}")
-    LOGGER.info(f"FSDP architecture: {model}")
-    torch.cuda.empty_cache()
+    LOGGER.info(f"Final Architecture: {model}")
+    LOGGER.info(f"{sum(p.numel() for p in model.parameters())} model parameters")
 
     # Applying gradient checkpointing - note that only the LlamaDecoderLayer supports this,
     # so we can just reuse our existing wrap_policy.
@@ -190,6 +170,13 @@ def main():
             transformer_layer_cls={LlamaDecoderLayer},
         ),
     )
+
+    model = model.to_empty(device=device)
+    # TODO: init_weights() just starts from scratch. we also want to demonstrate how to load pretrained weights
+    model.init_weights()
+    model.train()
+
+    LOGGER.info(f"{_get_cuda_mem_stats()}")
 
     # NOTE: since this can download data, make sure to do the main process first on each node
     # since we manually specified HF_HOME to be a node local drive.
