@@ -59,7 +59,8 @@ def main():
 
     with rank0_first():
         config = AutoConfig.from_pretrained(args.model_name, use_cache=False)
-        model = AutoModelForCausalLM.from_config(config, torch_dtype=dtype).to(device)
+        with device:
+            model = AutoModelForCausalLM.from_config(config, torch_dtype=dtype)
     LOGGER.info(f"{sum(p.numel() for p in model.parameters())} model parameters")
 
     model = DistributedDataParallel(model, device_ids=[rank], output_device=rank)

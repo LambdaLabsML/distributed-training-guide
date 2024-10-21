@@ -45,7 +45,8 @@ def main():
 
     # Note: Initializing an **untrained** model
     config = AutoConfig.from_pretrained(args.model_name, use_cache=False)
-    model = AutoModelForCausalLM.from_config(config, torch_dtype=dtype).to(device)
+    with device:
+        model = AutoModelForCausalLM.from_config(config, torch_dtype=dtype)
     LOGGER.info(f"{sum(p.numel() for p in model.parameters())} model parameters")
 
     train_data = _load_and_preprocess_data(args, config)

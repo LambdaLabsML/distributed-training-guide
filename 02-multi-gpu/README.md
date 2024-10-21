@@ -130,9 +130,9 @@ pytorch by default tries to take advantage of all the cores available when doing
 
 You can manually check how many available cores there are and then split them accordingly. E.g. if there were 32 cores on a machine and 8 GPUs, you could set OMP_NUM_THREADS to 4.
 
-### Calling `dist.init_process_group()`
+### Calling `dist.init_process_group()` and `torch.cuda.set_device()`
 
-One of the main changes is including `dist.init_process_group()`. You are required to call this before calling other dist apis.
+You are required to call both of these before calling other dist apis.
 
 ```diff
  def main():
@@ -187,12 +187,12 @@ Downloading model weights & tokenizer:
 
 ```diff
 -config = AutoConfig.from_pretrained(args.model_name, use_cache=False)
--model = AutoModelForCausalLM.from_config(config, torch_dtype=dtype).to(device)
--tokenizer = AutoTokenizer.from_pretrained(args.model_name)
+-with device:
+-    model = AutoModelForCausalLM.from_config(config, torch_dtype=dtype)
 +with rank0_first():
 +    config = AutoConfig.from_pretrained(args.model_name, use_cache=False)
-+    model = AutoModelForCausalLM.from_config(config, torch_dtype=dtype).to(device)
-+    tokenizer = AutoTokenizer.from_pretrained(args.model_name)
++    with device:
++        model = AutoModelForCausalLM.from_config(config, torch_dtype=dtype)
 ```
 
 Downloading data:

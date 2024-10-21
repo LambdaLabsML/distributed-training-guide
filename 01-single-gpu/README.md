@@ -83,8 +83,11 @@ We are training a BF16 causal language model (think GPT) using `transformers`
 
 ```python
 config = AutoConfig.from_pretrained(args.model_name, use_cache=False)
-model = AutoModelForCausalLM.from_config(config, torch_dtype=dtype).to(device)
+with device:
+    model = AutoModelForCausalLM.from_config(config, torch_dtype=dtype)
 ```
+
+Note that the `with device:` will construct all tensors on our device immediately, so we don't have to allocate on the CPU and then transfer to the device.
 
 ### Initializing our dataset
 
