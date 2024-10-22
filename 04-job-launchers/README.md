@@ -106,7 +106,7 @@ From there on we just paste our normal python command, note that we use `$(which
 
 slurm is a very popular job scheduling software often used with clusters.
 
-Submit the training job using the provided `job.slurm` script:
+Submit the training job using the provided `job.sbatch` script:
 
 ```bash
 cd distributed-training-guide/04-job-launchers
