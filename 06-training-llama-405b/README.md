@@ -6,6 +6,19 @@ Here we are going to utilize an 8 node cluster (64 H100 GPUs) to train Llama 3.1
 
 The next few sections go through various changes we have to make to our FSDP code from chapter 5 to make training a 405b model work.
 
+Quick Jump:
+- [Use flash attention](#use-flash-attention)
+- [Download model weights](#download-model-weights)
+- [Loading pretrained weights](#loading-pretrained-weights)
+- [Sharding Llama 405B](#sharding-llama-405b)
+- [Gradient (aka activation) checkpointing](#gradient-aka-activation-checkpointing)
+- [CPU Offload \& fused optimizer kernels](#cpu-offload--fused-optimizer-kernels)
+- [NOT de-allocating gradients](#not-de-allocating-gradients)
+- [Launch command](#launch-command)
+- [Monitoring](#monitoring)
+- [Run statistics](#run-statistics)
+- [Other notes on settings that didn't affect throughput](#other-notes-on-settings-that-didnt-affect-throughput)
+
 ## Use flash attention
 
 Flash attention is a fused implementation of scaled dot product attention that heavily minimizes memory usage. The whole goal behind it is to query memory as little as possible, and minimize temporary memory used.

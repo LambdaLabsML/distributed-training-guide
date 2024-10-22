@@ -27,7 +27,17 @@ Assumes:
 1. You are using the same enviroment on both machines
 2. You are logged into wandb on both machines
 
-## How Multi Node works
+Quick Jump
+- [How multi node works](#how-multi-node-works)
+- [Managing python venvs across nodes](#managing-your-python-virtual-environment-across-nodes)
+- [Managing dataset/model across nodes](#mangaging-your-datasetmodel-checkpoints-across-nodes)
+- Code Changes
+    - [Using local rank for device instead of rank](#using-local-rank-for-device-instead-of-rank)
+    - [Using local rank for DDP instead of rank](#using-local-rank-for-ddp-instead-of-rank)
+    - [Checking whether exp_dir is a shared network drive](#checking-whether-exp_dir-is-a-shared-network-drive)
+    - [Downloaded Model/Dataset directory](#downloaded-modeldataset-directory)
+
+## How multi node works
 
 It actually works in much the same way as the multi GPU. Since in the single node setting we have multiple processes, now we are just adding extra processes on different machines.
 
@@ -39,11 +49,15 @@ The main differences here to consider are:
 
 Error reporting/handling becomes extremely important with more than 1 node. Networking issues are very common, and there are some subtle things that you need to ensure are identical between the machines.
 
-### Shared network drive
+## Managing your python virtual environment across nodes
 
-Shared network drives are the easiest way to maintain the same data/environment on all nodes. When you create a python virtual environment in a shared network drive, all nodes will be able to use the same python executable.
+For this the easiest approach is to create your python virtual environment in a shared network drive that all nodes can access. This way all of your nodes are using the exact same python executable/environment.
 
-Additionally, you can put all of your data and code in the shared directory as well.
+Creating the virtual environment is the same as normal, you just want the directory to be shared.
+
+## Mangaging your dataset/model checkpoints across nodes
+
+Again, the easiest approach here is to keep your data in a shared network drive. One thing to note is that shared network drives are slower to read from than node local drives. If you run into slowdowns in data loading, you can copy the data or model into node local storage.
 
 When using `transformers` or `datasets`, make sure to set the `$HF_HOME` environment variable to control where huggingface downloads both datasets and model weights.
 

@@ -16,6 +16,23 @@ What this means:
 
 Sharding is a **data parallel** technique! **NOT** a model/tensor/pipeline parallel technique.
 
+- [PyTorch FullyShardedDataParallel (FSDP)](#pytorch-fullyshardeddataparallel-fsdp)
+  - [Initialization **after** sharding - the `meta` device](#initialization-after-sharding---the-meta-device)
+    - [The FSDP Constructor](#the-fsdp-constructor)
+    - [Parameter initialization (when using the `meta` device) - `param_init_fn`](#parameter-initialization-when-using-the-meta-device---param_init_fn)
+     - [reset\_parameters()](#reset_parameters)
+     - [Loading a checkpoint](#loading-a-checkpoint)
+   - [sync\_module\_states](#sync_module_states)
+   - [What layers to shard - the `auto_wrap_policy`](#what-layers-to-shard---the-auto_wrap_policy)
+   - [What to shard - `sharding_strategy`](#what-to-shard---sharding_strategy)
+   - [CPU Offload](#cpu-offload)
+  - [Sharded Checkpoints](#sharded-checkpoints)
+- [Run Command](#run-command)
+- [Examples of memory usage with different configurations](#examples-of-memory-usage-with-different-configurations)
+   - [meta-llama/Llama-2-7B-hf](#meta-llamallama-2-7b-hf)
+   - [meta-llama/Llama-2-70B-hf](#meta-llamallama-2-70b-hf)
+
+
 ## PyTorch FullyShardedDataParallel (FSDP)
 
 At a high level FSDP works as follow:
@@ -246,7 +263,7 @@ If you want to convert between formats (like sharded to full state dict), pytorc
 
 https://pytorch.org/tutorials/recipes/distributed_checkpoint_recipe.html#formats
 
-### Run Command
+## Run Command
 
 Same command as normal:
 
@@ -267,7 +284,7 @@ torchrun --standalone \
     --cpu-offload on
 ```
 
-### Examples of memory usage with different configurations
+## Examples of memory usage with different configurations
 
 * `peak GPU memory`: The highest GPU memory allocated *at any point* during a single training loop iteration (*during* forward/backward/step)
 * `valley GPU memory`: The GPU memory allocated at the end of a single training loop iteration (*after* forward/backward/step)

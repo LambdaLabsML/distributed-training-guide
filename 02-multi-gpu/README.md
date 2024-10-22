@@ -17,6 +17,21 @@ torchrun --standalone \
     --model-name openai-community/gpt2
 ```
 
+Quick jump:
+- [How Distributed Training works](#how-distributed-training-works)
+    - [Running N Processes](#running-n-copies-of-our-training-script)
+    - [Splitting data](#splitting-data-across-our-workers---torchutilsdatadistributeddistributedsampler)
+    - [Gradient Synchronization](#gradient-synchronization---torchnnparalleldistributeddataparallel)
+- Code Changes
+    - [Using torchrun](#using-torchrun-instead-of-python)
+    - [Calling dist.init_process_group() and torch.cuda.set_device()](#calling-distinit_process_group-and-torchcudaset_device)
+    - [DistributedDataParallel (DDP)](#using-distributeddataparallel)
+    - [DistributedSampler](#using-distributedsampler)
+    - [Downloading model/data in rank 0 first](#downloading-model--data-in-rank-0-first)
+    - [Interacting with file system on rank 0 only](#only-creating-experiment-directory-on-rank-0)
+    - [wandb on rank 0 only](#wandb-runs-on-rank-0)
+    - [Checkpoints from rank 0 only](#save-checkpoint-on-rank-0)
+
 ## Dictionary
 
 - `world size`: the total number of participating gpus
@@ -154,14 +169,39 @@ Note that we are now:
 
 ### Using DistributedDataParallel
 
-As discussed earlier - this is for gradient synchronization and model weight syncing at initialization. We just call this after we've already constructed our models.
+As [discussed above](#gradient-synchronization---torchnnparalleldistributeddataparallel) - this is for gradient synchronization and model weight syncing at initialization. We just call this after we've already constructed our models.
 
 ```diff
  model = AutoModelForCausalLM.from_config(config, torch_dtype=dtype).to(device)
 +model = DistributedDataParallel(model, device_ids=[rank], output_device=rank)
 ```
 
-### Downloading data in rank 0 first
+### Using DistributedSampler
+
+As [discussed above](#splitting-data-across-our-workers---torchutilsdatadistributeddistributedsampler), this will let each rank grab a different subset of the data.
+
+```diff
+ dataloader = DataLoader(
+     train_data,
+     batch_size=args.batch_size,
+-    shuffle=True,
+-    drop_last=True,
+     collate_fn=default_data_collator,
++    sampler=DistributedSampler(train_data, shuffle=True, drop_last=True),
+ )
+```
+
+You also need to call [DistributedSampler.set_epoch](https://pytorch.org/docs/stable/data.html#torch.utils.data.distributed.DistributedSampler). Here's the quote from the pytorch doc on this:
+
+```diff
++dataloader.sampler.set_epoch(state["epoch"])
+ batches = iter(dataloader)
+```
+
+> In distributed mode, calling the set_epoch() method at the beginning of each epoch before creating the DataLoader iterator is necessary to make shuffling work properly across multiple epochs. Otherwise, the same ordering will be always used.
+
+
+### Downloading model & data in rank 0 first
 
 This is mainly necessary because loading our data may download/preprocess some data and write to disk.
 
@@ -203,31 +243,6 @@ Downloading data:
 +with rank0_first():
 +    train_data = _load_and_preprocess_data(args, tokenizer, config)
 ```
-
-### Using DistributedSampler
-
-As discussed before, this will let each rank grab a different subset of the data.
-
-```diff
- dataloader = DataLoader(
-     train_data,
-     batch_size=args.batch_size,
--    shuffle=True,
--    drop_last=True,
-     collate_fn=default_data_collator,
-+    sampler=DistributedSampler(train_data, shuffle=True, drop_last=True),
- )
-```
-
-You also need to call [DistributedSampler.set_epoch](https://pytorch.org/docs/stable/data.html#torch.utils.data.distributed.DistributedSampler). Here's the quote from the pytorch doc on this:
-
-```diff
-+dataloader.sampler.set_epoch(state["epoch"])
- batches = iter(dataloader)
-```
-
-> In distributed mode, calling the set_epoch() method at the beginning of each epoch before creating the DataLoader iterator is necessary to make shuffling work properly across multiple epochs. Otherwise, the same ordering will be always used.
-
 
 ### Only creating experiment directory on rank 0
 
