@@ -405,7 +405,7 @@ def _get_parser() -> argparse.ArgumentParser:
     parser.add_argument("--log-freq", default=100, type=int)
     parser.add_argument("--ckpt-freq", default=500, type=int)
     parser.add_argument("--cpu-offload", default="on", choices=["on", "off"])
-    parser.add_argument("--seq-length", default=None, type=int)
+    parser.add_argument("--seq-length", default=1024, type=int)
     return parser
 
 
