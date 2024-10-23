@@ -250,6 +250,8 @@ def main():
 
             if state["global_step"] % args.log_freq == 0:
                 mem = torch.cuda.memory_stats(device)
+                tok_per_step = world_size * args.batch_size * args.seq_length
+                ms_per_step = sum(t.avg_elapsed_ms() for t in timers.values())
                 info = {
                     "global_step": state["global_step"],
                     "lr": lr_scheduler.get_last_lr()[0],
@@ -261,6 +263,8 @@ def main():
                     "peak_alloc_in_gb": 1e-9 * mem["allocated_bytes.all.peak"],
                     "curr_resv_in_gb": 1e-9 * mem["reserved_bytes.all.current"],
                     "peak_resv_in_gb": 1e-9 * mem["reserved_bytes.all.peak"],
+                    "tok/s": 1000 * tok_per_step / ms_per_step,
+                    "time/total": ms_per_step,
                     "time/total": sum(t.avg_elapsed_ms() for t in timers.values()),
                     **{
                         f"time/{k}": timer.avg_elapsed_ms()

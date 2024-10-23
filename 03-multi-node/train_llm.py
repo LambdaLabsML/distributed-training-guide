@@ -170,6 +170,8 @@ def main():
             progress_bar.update(1)
 
             if state["global_step"] % args.log_freq == 0:
+                tok_per_step = world_size * args.batch_size * args.seq_length
+                ms_per_step = sum(t.avg_elapsed_ms() for t in timers.values())
                 info = {
                     "global_step": state["global_step"],
                     "lr": lr_scheduler.get_last_lr()[0],
@@ -177,7 +179,8 @@ def main():
                     "epoch": state["epoch"],
                     "epoch_progress": state["epoch_step"] / len(dataloader),
                     "num_batches_remaining": len(dataloader) - i_step,
-                    "time/total": sum(t.avg_elapsed_ms() for t in timers.values()),
+                    "tok/s": 1000 * tok_per_step / ms_per_step,
+                    "time/total": ms_per_step,
                     **{
                         f"time/{k}": timer.avg_elapsed_ms()
                         for k, timer in timers.items()
