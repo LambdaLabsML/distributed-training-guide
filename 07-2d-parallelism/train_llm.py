@@ -10,11 +10,12 @@ from pathlib import Path
 import logging
 
 import torch
+from torch.nn.modules import Module
 from torch.utils.data import DataLoader
 from torch.utils.data.distributed import DistributedSampler
 from torch import distributed as dist
 import torch.distributed.tensor.parallel as tp
-from torch.distributed._tensor import Shard, Replicate
+from torch.distributed._tensor import Placement, Shard, Replicate
 from torch.distributed.algorithms._checkpoint.checkpoint_wrapper import (
     apply_activation_checkpointing,
     checkpoint_wrapper,
@@ -93,9 +94,7 @@ def main():
     config = AutoConfig.from_pretrained(args.model_name, use_cache=False)
     with torch.device("meta"):
         model: LlamaForCausalLM = AutoModelForCausalLM.from_config(
-            config,
-            torch_dtype=dtype,
-            attn_implementation="flash_attention_2"
+            config, torch_dtype=dtype, attn_implementation="flash_attention_2"
         )
     LOGGER.info(f"{sum(p.numel() for p in model.parameters())} model parameters")
 
@@ -108,14 +107,9 @@ def main():
             # Another assumption is that Embedding with indices that it doesn't have returns 0s
             # (so when the shards are asked for an index that is present on another shard, they just return 0)
             # TODO should output_layouts be Shard(1)?
-            "model.embed_tokens": tp.RowwiseParallel(input_layouts=Replicate()),
-            # NOTE: not sure if we can do sequence parllel on this one? due to class construction
-            "model.norm": tp.SequenceParallel(),
-            "lm_head": tp.ColwiseParallel(
-                # Assuming we can do sequence parallel for model.norm, we will be receiving the sharded input
-                input_layouts=Shard(1),
-                # and we want the outputs to be sharded on the last dimension, which is the default behavior,
-                # but we need to convert this to a Tensor
+            "model.embed_tokens": tp.RowwiseParallel(
+                input_layouts=Replicate(),
+                output_layouts=Shard(1),
                 use_local_output=False,
             ),
         },
@@ -133,13 +127,18 @@ def main():
                 "input_layernorm": tp.SequenceParallel(),
                 # The input to self_attn (which is the output from the SequenceParallel input_layer_norm) will be sharded on dimension 1, but we wanted it to be the whole tensor.
                 "self_attn": tp.PrepareModuleInput(
-                    input_layouts=Shard(dim=1), desired_input_layouts=Replicate()
+                    input_kwarg_layouts={
+                        "hidden_states": Shard(dim=1),
+                    },
+                    desired_input_kwarg_layouts={"hidden_states": Replicate()},
                 ),
                 # TODO talk about how this all works together (go through line by line in the flash attn forward to show dims)
                 "self_attn.q_proj": tp.ColwiseParallel(),
                 "self_attn.k_proj": tp.ColwiseParallel(),
                 "self_attn.v_proj": tp.ColwiseParallel(),
-                "self_attn.o_proj": tp.RowwiseParallel(),
+                "self_attn.o_proj": tp.RowwiseParallel(
+                    output_layouts=Shard(1), use_local_output=False
+                ),
                 # TODO should we apply tensor parallel to self_attn?
                 # Another sharding along sequence dimension.
                 "post_attention_layernorm": tp.SequenceParallel(),
@@ -149,27 +148,48 @@ def main():
                 # TODO Show graphic from pytorch lightning for explaining this.
                 "mlp.gate_proj": tp.ColwiseParallel(),
                 "mlp.up_proj": tp.ColwiseParallel(),
-                "mlp.down_proj": tp.RowwiseParallel(),
+                "mlp.down_proj": tp.RowwiseParallel(
+                    output_layouts=Shard(1), use_local_output=False
+                ),
             },
         )
 
-    for layer in model.model.layers:
-        # NOTE: mesh=mesh["dp"] is FSDP, mesh=mesh is HSDP
-        fully_shard(layer, mesh=mesh["dp"], offload_policy=CPUOffloadPolicy())
+    tp.parallelize_module(
+        model,
+        mesh["tp"],
+        {
+            # NOTE: not sure if we can do sequence parllel on this one? due to class construction
+            "model.norm": tp.SequenceParallel(),
+            "lm_head": tp.ColwiseParallel(
+                # Assuming we can do sequence parallel for model.norm, we will be receiving the sharded input
+                input_layouts=Shard(1),
+                ## and we want the outputs to be sharded on the last dimension, which is the default behavior,
+                # output_layouts=Shard(-1),
+                ## but we need to convert this to a Tensor
+                # use_local_output=False,
+                output_layouts=Replicate(),
+                use_local_output=True,
+            ),
+        },
+    )
+
+    # for layer in model.model.layers:
+    #     # NOTE: mesh=mesh["dp"] is FSDP, mesh=mesh is HSDP
+    #     fully_shard(layer, mesh=mesh["dp"], offload_policy=CPUOffloadPolicy())
 
     LOGGER.info(f"Final Architecture: {model}")
     LOGGER.info(f"{sum(p.numel() for p in model.parameters())} model parameters")
 
-    # Applying gradient checkpointing - note that only the LlamaDecoderLayer supports this,
-    # so we can just reuse our existing wrap_policy.
-    apply_activation_checkpointing(
-        model,
-        checkpoint_wrapper_fn=checkpoint_wrapper,
-        auto_wrap_policy=functools.partial(
-            transformer_auto_wrap_policy,
-            transformer_layer_cls={LlamaDecoderLayer},
-        ),
-    )
+    # # Applying gradient checkpointing - note that only the LlamaDecoderLayer supports this,
+    # # so we can just reuse our existing wrap_policy.
+    # apply_activation_checkpointing(
+    #     model,
+    #     checkpoint_wrapper_fn=checkpoint_wrapper,
+    #     auto_wrap_policy=functools.partial(
+    #         transformer_auto_wrap_policy,
+    #         transformer_layer_cls={LlamaDecoderLayer},
+    #     ),
+    # )
 
     model = model.to_empty(device=device)
     # TODO: init_weights() just starts from scratch. we also want to demonstrate how to load pretrained weights
@@ -288,10 +308,11 @@ def main():
                 # NOTE: for resuming
                 continue
 
-            with timers["forward"], tp.loss_parallel():
+            # with tp.loss_parallel():
+            with timers["forward"]:
                 outputs = model(**batch)
 
-            with timers["backward"], tp.loss_parallel():
+            with timers["backward"]:
                 outputs.loss.backward()
 
             with timers["update"]:
