@@ -62,7 +62,7 @@ def main():
     )
     LOGGER.info(f"{len(dataloader)} batches per epoch")
 
-    optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, fused=True)
 
     # NOTE: T_max and eta_min were arbitrarily chosen
     lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
