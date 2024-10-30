@@ -105,12 +105,14 @@ dataloader = DataLoader(
     collate_fn=default_data_collator,
 )
 
-optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr)
+optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, fused=True)
 
 lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
     optimizer, T_max=1000, eta_min=args.lr * 1e-2
 )
 ```
+
+Note: The `fused=True` argument to the optimizer results in a fused kernel being used. This is faster in pretty much all cases, so we enable it in all the chapters in this guide!!
 
 ### Outputs & Resuming
 
