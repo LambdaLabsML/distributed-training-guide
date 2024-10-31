@@ -55,7 +55,7 @@ def main():
 
     with rank0_first():
         config = AutoConfig.from_pretrained(args.model_name, use_cache=False)
-        with device:
+        with deepspeed.zero.Init(remote_device="cpu", pin_memory=True):
             model = AutoModelForCausalLM.from_config(config, torch_dtype=dtype)
     LOGGER.info(f"{sum(p.numel() for p in model.parameters())} model parameters")
 
@@ -159,7 +159,11 @@ def main():
             progress_bar.update(1)
 
             if state["global_step"] % args.log_freq == 0:
-                tok_per_step = world_size * args.batch_size * args.seq_length
+                tok_per_step = (
+                    world_size
+                    * model_engine.train_micro_batch_size_per_gpu()
+                    * args.seq_length
+                )
                 ms_per_step = sum(t.avg_elapsed_ms() for t in timers.values())
                 info = {
                     "global_step": state["global_step"],
