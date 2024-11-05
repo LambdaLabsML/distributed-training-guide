@@ -296,7 +296,7 @@ def main():
                 batch = {k: v.to(device=device) for k, v in batch.items()}
                 batch["position_ids"] = torch.arange(
                     0, args.seq_length, device=device, dtype=torch.long
-                )
+                ).unsqueeze(0)
 
             if i_step < state["epoch_step"]:
                 # NOTE: for resuming
