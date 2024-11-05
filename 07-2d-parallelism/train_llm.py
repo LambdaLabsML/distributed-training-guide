@@ -106,11 +106,13 @@ def main():
             # For Embedding, replicating outputs means that they are allreduced together (assuming summed, but not able to verify)
             # Another assumption is that Embedding with indices that it doesn't have returns 0s
             # (so when the shards are asked for an index that is present on another shard, they just return 0)
-            # TODO should output_layouts be Shard(1)?
             "model.embed_tokens": tp.RowwiseParallel(
                 input_layouts=Replicate(),
                 output_layouts=Shard(1),
-                use_local_output=False,
+            ),
+            "model.rotary_emb": tp.PrepareModuleInput(
+                input_kwarg_layouts={"position_ids": Shard(1)},
+                desired_input_kwarg_layouts={"position_ids": Replicate()},
             ),
         },
     )
@@ -136,10 +138,7 @@ def main():
                 "self_attn.q_proj": tp.ColwiseParallel(),
                 "self_attn.k_proj": tp.ColwiseParallel(),
                 "self_attn.v_proj": tp.ColwiseParallel(),
-                "self_attn.o_proj": tp.RowwiseParallel(
-                    output_layouts=Shard(1), use_local_output=False
-                ),
-                # TODO should we apply tensor parallel to self_attn?
+                "self_attn.o_proj": tp.RowwiseParallel(output_layouts=Shard(1)),
                 # Another sharding along sequence dimension.
                 "post_attention_layernorm": tp.SequenceParallel(),
                 "mlp": tp.PrepareModuleInput(
@@ -148,9 +147,7 @@ def main():
                 # TODO Show graphic from pytorch lightning for explaining this.
                 "mlp.gate_proj": tp.ColwiseParallel(),
                 "mlp.up_proj": tp.ColwiseParallel(),
-                "mlp.down_proj": tp.RowwiseParallel(
-                    output_layouts=Shard(1), use_local_output=False
-                ),
+                "mlp.down_proj": tp.RowwiseParallel(output_layouts=Shard(1)),
             },
         )
 
@@ -158,15 +155,9 @@ def main():
         model,
         mesh["tp"],
         {
-            # NOTE: not sure if we can do sequence parllel on this one? due to class construction
             "model.norm": tp.SequenceParallel(),
             "lm_head": tp.ColwiseParallel(
-                # Assuming we can do sequence parallel for model.norm, we will be receiving the sharded input
                 input_layouts=Shard(1),
-                ## and we want the outputs to be sharded on the last dimension, which is the default behavior,
-                # output_layouts=Shard(-1),
-                ## but we need to convert this to a Tensor
-                # use_local_output=False,
                 output_layouts=Replicate(),
                 use_local_output=True,
             ),
@@ -303,6 +294,9 @@ def main():
             with timers["data"], torch.no_grad():
                 batch = next(batches)
                 batch = {k: v.to(device=device) for k, v in batch.items()}
+                batch["position_ids"] = torch.arange(
+                    0, args.seq_length, device=device, dtype=torch.long
+                )
 
             if i_step < state["epoch_step"]:
                 # NOTE: for resuming
