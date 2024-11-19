@@ -22,9 +22,10 @@ Quick jump:
     - [Running N Processes](#running-n-copies-of-our-training-script)
     - [Splitting data](#splitting-data-across-our-workers---torchutilsdatadistributeddistributedsampler)
     - [Gradient Synchronization](#gradient-synchronization---torchnnparalleldistributeddataparallel)
+- [Using torchrun](#using-torchrun-instead-of-python)
 - Code Changes
-    - [Using torchrun](#using-torchrun-instead-of-python)
     - [Calling dist.init_process_group() and torch.cuda.set_device()](#calling-distinit_process_group-and-torchcudaset_device)
+    - [Including rank in logging statements](#including-rank-in-logging-statements)
     - [DistributedDataParallel (DDP)](#using-distributeddataparallel)
     - [DistributedSampler](#using-distributedsampler)
     - [Downloading model/data in rank 0 first](#downloading-model--data-in-rank-0-first)
@@ -114,9 +115,7 @@ gradient = param.grad / self.process_group.size()
 gradient = fcol.all_reduce(gradient, "sum", self.process_group)
 ```
 
-## Code Changes
-
-### Using `torchrun` instead of `python`
+## Using `torchrun` instead of `python`
 
 When training with multiple GPUs, we are actually spinning up a process for each GPU we are using. `torchrun` does this for us. It also manages the communication settings between each of the processes.
 
@@ -145,26 +144,52 @@ pytorch by default tries to take advantage of all the cores available when doing
 
 You can manually check how many available cores there are and then split them accordingly. E.g. if there were 32 cores on a machine and 8 GPUs, you could set OMP_NUM_THREADS to 4.
 
+
+## Code Changes
+
 ### Calling `dist.init_process_group()` and `torch.cuda.set_device()`
 
 You are required to call both of these before calling other dist apis.
+
+`dist.init_process_group()` will block until `WORLD_SIZE` processes have called it.
 
 ```diff
  def main():
      parser = _get_parser()
      args = parser.parse_args()
+
 +    dist.init_process_group()
++    rank = dist.get_rank()
++    world_size = dist.get_world_size()
 ```
 
-Note that we are now:
-1. Setting our device using `rank`: `device = torch.device(f"cuda:{rank}")`
-2. Calling `torch.cuda.set_device(device)`, which is **required for dist calls to work**.
+Then we can set our device using rank:
 
 ```diff
 -device = torch.device(f"cuda")
 +device = torch.device(f"cuda:{rank}")
+```
+
+And finally add your call to torch.cuda.set_device shortly after that:
+
+```diff
+ device = torch.device(f"cuda:{rank}")
  dtype = torch.bfloat16
 +torch.cuda.set_device(device)
+```
+
+If you don't call torch.cuda.set_device, processes may not be using the correct CUDA device.
+
+### Including rank in logging statements
+
+This is a helpful thing to do to handle all the processes outputting to the same file, or even when you're browsing a single log file it's useful to have this on every log statement:
+
+```diff
+ logging.basicConfig(
+-     format=f"[%(asctime)s] %(levelname)s:%(message)s",
++     format=f"[rank={rank}] [%(asctime)s] %(levelname)s:%(message)s",
+     level=logging.INFO,
+ )
 ```
 
 ### Using DistributedDataParallel
