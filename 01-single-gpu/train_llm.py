@@ -276,17 +276,17 @@ class LocalTimer:
 
 def _get_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--experiment-name", default=None, required=True)
-    parser.add_argument("--dataset-name", default=None, required=True)
-    parser.add_argument("--model-name", default=None, required=True)
+    parser.add_argument("-e", "--experiment-name", default=None, required=True)
+    parser.add_argument("-d", "--dataset-name", default=None, required=True)
+    parser.add_argument("-m", "--model-name", default=None, required=True)
     parser.add_argument("--save-dir", default="../outputs")
     parser.add_argument("--seed", default=0, type=int)
     parser.add_argument("--num-epochs", default=100, type=int)
     parser.add_argument("--lr", default=3e-5, type=float)
-    parser.add_argument("--batch-size", default=1, type=int)
+    parser.add_argument("-b", "--batch-size", default=1, type=int)
     parser.add_argument("--log-freq", default=100, type=int)
     parser.add_argument("--ckpt-freq", default=500, type=int)
-    parser.add_argument("--seq-length", default=1024, type=int)
+    parser.add_argument("-s", "--seq-length", default=1024, type=int)
     return parser
 
 
