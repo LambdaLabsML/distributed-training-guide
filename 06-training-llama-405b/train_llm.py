@@ -92,10 +92,7 @@ def main():
             )
     LOGGER.info(f"{sum(p.numel() for p in model.parameters())} model parameters")
 
-    mem = torch.cuda.memory_stats(device)
-    LOGGER.info(
-        f"Before FSDP: {(mem['allocated_bytes.all.current'] + mem['reserved_bytes.all.current']) * 1e-9}gb used"
-    )
+    LOGGER.info(f"Before FSDP: {get_mem_stats(device)}")
 
     from torch.nn import Embedding
     from transformers.models.llama.modeling_llama import LlamaDecoderLayer
@@ -115,10 +112,7 @@ def main():
         cpu_offload=CPUOffload(offload_params=args.cpu_offload == "on"),
     )
 
-    mem = torch.cuda.memory_stats(device)
-    LOGGER.info(
-        f"After FSDP: {(mem['allocated_bytes.all.current'] + mem['reserved_bytes.all.current']) * 1e-9}gb used"
-    )
+    LOGGER.info(f"After FSDP: {get_mem_stats(device)}")
     LOGGER.info(f"FSDP architecture: {model}")
 
     # Applying gradient checkpointing - note that only the LlamaDecoderLayer supports this,
@@ -249,7 +243,6 @@ def main():
             progress_bar.update(1)
 
             if state["global_step"] % args.log_freq == 0:
-                mem = torch.cuda.memory_stats(device)
                 tok_per_step = world_size * args.batch_size * args.seq_length
                 ms_per_step = sum(t.avg_elapsed_ms() for t in timers.values())
                 info = {
@@ -259,10 +252,7 @@ def main():
                     "epoch": state["epoch"],
                     "epoch_progress": state["epoch_step"] / len(dataloader),
                     "num_batches_remaining": len(dataloader) - i_step,
-                    "curr_alloc_in_gb": 1e-9 * mem["allocated_bytes.all.current"],
-                    "peak_alloc_in_gb": 1e-9 * mem["allocated_bytes.all.peak"],
-                    "curr_resv_in_gb": 1e-9 * mem["reserved_bytes.all.current"],
-                    "peak_resv_in_gb": 1e-9 * mem["reserved_bytes.all.peak"],
+                    **get_mem_stats(device),
                     "tok/s": 1000 * tok_per_step / ms_per_step,
                     "time/total": ms_per_step,
                     "time/total": sum(t.avg_elapsed_ms() for t in timers.values()),
@@ -355,6 +345,18 @@ def _load_and_preprocess_data(args, config):
     )
 
     return lm_datasets["train"]
+
+
+def get_mem_stats(device=None):
+    mem = torch.cuda.memory_stats(device)
+    props = torch.cuda.get_device_properties(device)
+    return {
+        "total_mem_in_gb": 1e-9 * props.total_memory,
+        "curr_alloc_in_gb": 1e-9 * mem["allocated_bytes.all.current"],
+        "peak_alloc_in_gb": 1e-9 * mem["allocated_bytes.all.peak"],
+        "curr_resv_in_gb": 1e-9 * mem["reserved_bytes.all.current"],
+        "peak_resv_in_gb": 1e-9 * mem["reserved_bytes.all.peak"],
+    }
 
 
 @contextmanager

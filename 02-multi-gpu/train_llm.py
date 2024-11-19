@@ -177,6 +177,7 @@ def main():
                     "epoch": state["epoch"],
                     "epoch_progress": state["epoch_step"] / len(dataloader),
                     "num_batches_remaining": len(dataloader) - i_step,
+                    **get_mem_stats(device),
                     "tok/s": 1000 * tok_per_step / ms_per_step,
                     "time/total": ms_per_step,
                     **{
@@ -189,6 +190,7 @@ def main():
                 if rank == 0:
                     wandb.log(info, step=state["global_step"])
 
+                torch.cuda.reset_peak_memory_stats(device)
                 state["running_loss"] = 0
                 for t in timers.values():
                     t.reset()
@@ -260,6 +262,18 @@ def _load_and_preprocess_data(args, config):
     )
 
     return lm_datasets["train"]
+
+
+def get_mem_stats(device=None):
+    mem = torch.cuda.memory_stats(device)
+    props = torch.cuda.get_device_properties(device)
+    return {
+        "total_mem_in_gb": 1e-9 * props.total_memory,
+        "curr_alloc_in_gb": 1e-9 * mem["allocated_bytes.all.current"],
+        "peak_alloc_in_gb": 1e-9 * mem["allocated_bytes.all.peak"],
+        "curr_resv_in_gb": 1e-9 * mem["reserved_bytes.all.current"],
+        "peak_resv_in_gb": 1e-9 * mem["reserved_bytes.all.peak"],
+    }
 
 
 @contextmanager
