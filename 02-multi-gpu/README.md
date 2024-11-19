@@ -219,12 +219,12 @@ As [discussed above](#splitting-data-across-our-workers---torchutilsdatadistribu
 You also need to call [DistributedSampler.set_epoch](https://pytorch.org/docs/stable/data.html#torch.utils.data.distributed.DistributedSampler). Here's the quote from the pytorch doc on this:
 
 ```diff
-+dataloader.sampler.set_epoch(state["epoch"])
- batches = iter(dataloader)
+ for state["epoch"] in range(state["epoch"], args.num_epochs):
++    dataloader.sampler.set_epoch(state["epoch"])
+     batches = iter(dataloader)
 ```
 
 > In distributed mode, calling the set_epoch() method at the beginning of each epoch before creating the DataLoader iterator is necessary to make shuffling work properly across multiple epochs. Otherwise, the same ordering will be always used.
-
 
 ### Downloading model & data in rank 0 first
 
