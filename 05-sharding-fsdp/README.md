@@ -18,7 +18,7 @@ Sharding is a **data parallel** technique! **NOT** a model/tensor/pipeline paral
 
 - [PyTorch FullyShardedDataParallel (FSDP)](#pytorch-fullyshardeddataparallel-fsdp)
   - [Initialization **after** sharding - the `meta` device](#initialization-after-sharding---the-meta-device)
-    - [The FSDP Constructor](#the-fsdp-constructor)
+  - [The FSDP Constructor](#the-fsdp-constructor)
     - [Parameter initialization (when using the `meta` device) - `param_init_fn`](#parameter-initialization-when-using-the-meta-device---param_init_fn)
      - [reset\_parameters()](#reset_parameters)
      - [Loading a checkpoint](#loading-a-checkpoint)
