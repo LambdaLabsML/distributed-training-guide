@@ -259,22 +259,17 @@ def rank0_first():
 Downloading model weights & tokenizer:
 
 ```diff
--config = AutoConfig.from_pretrained(args.model_name, use_cache=False)
--with device:
--    model = AutoModelForCausalLM.from_config(config, torch_dtype=dtype)
 +with rank0_first():
-+    config = AutoConfig.from_pretrained(args.model_name, use_cache=False)
-+    with device:
-+        model = AutoModelForCausalLM.from_config(config, torch_dtype=dtype)
+     config = AutoConfig.from_pretrained(args.model_name, use_cache=False)
+     with device:
+         model = AutoModelForCausalLM.from_config(config, torch_dtype=dtype)
 ```
 
 Downloading data:
 
 ```diff
--train_data = _load_and_preprocess_data(args, tokenizer, config)
-+# NOTE: since this can download data, make sure to do the main process first
 +with rank0_first():
-+    train_data = _load_and_preprocess_data(args, tokenizer, config)
+     train_data = _load_and_preprocess_data(args, tokenizer, config)
 ```
 
 ### Only creating experiment directory on rank 0
@@ -284,9 +279,8 @@ Note the `dist.barrier()` calls before and after we create the directory. **Thes
 Since we check to see if the experiment directory already exists right before creating the experiment directory, we need to ensure that **all processes have checked for its existence**. So the first `dist.barrier()` call ensures that all workers have already checked the existence of that. Then and only then can we create the directory on rank 0.
 
 ```diff
--exp_dir.mkdir(parents=True, exist_ok=True)
 +if rank == 0:
-+    exp_dir.mkdir(parents=True, exist_ok=True)
+     exp_dir.mkdir(parents=True, exist_ok=True)
 +dist.barrier()
 ```
 
@@ -328,16 +322,11 @@ We only want one of our ranks to save a checkpoint. Otherwise the ranks might wr
 
 ```diff
  if state["global_step"] % args.ckpt_freq == 0:
--    torch.save(optimizer.state_dict(), exp_dir / "optimizer.pt")
--    torch.save(model.state_dict(), exp_dir / "model.pt")
--    torch.save(lr_scheduler.state_dict(), exp_dir / "lr_scheduler.pt")
--    with open(exp_dir / "state.json", "w") as fp:
--        json.dump(state, fp)
 +    if rank == 0:
-+        torch.save(optimizer.state_dict(), exp_dir / "optimizer.pt")
-+        torch.save(model.state_dict(), exp_dir / "model.pt")
-+        torch.save(lr_scheduler.state_dict(), exp_dir / "lr_scheduler.pt")
-+        with open(exp_dir / "state.json", "w") as fp:
-+             json.dump(state, fp)
+         torch.save(optimizer.state_dict(), exp_dir / "optimizer.pt")
+         torch.save(model.state_dict(), exp_dir / "model.pt")
+         torch.save(lr_scheduler.state_dict(), exp_dir / "lr_scheduler.pt")
+         with open(exp_dir / "state.json", "w") as fp:
+              json.dump(state, fp)
 +    dist.barrier()
 ```
