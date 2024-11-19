@@ -197,7 +197,8 @@ This is a helpful thing to do to handle all the processes outputting to the same
 As [discussed above](#gradient-synchronization---torchnnparalleldistributeddataparallel) - this is for gradient synchronization and model weight syncing at initialization. We just call this after we've already constructed our models.
 
 ```diff
- model = AutoModelForCausalLM.from_config(config, torch_dtype=dtype).to(device)
+ with device: 
+     model = AutoModelForCausalLM.from_config(config, torch_dtype=dtype)
 +model = DistributedDataParallel(model, device_ids=[rank], output_device=rank)
 ```
 
