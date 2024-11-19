@@ -154,6 +154,8 @@ You are required to call both of these before calling other dist apis.
 `dist.init_process_group()` will block until `WORLD_SIZE` processes have called it.
 
 ```diff
++from torch import distributed as dist
+
  def main():
      parser = _get_parser()
      args = parser.parse_args()
@@ -197,8 +199,11 @@ This is a helpful thing to do to handle all the processes outputting to the same
 As [discussed above](#gradient-synchronization---torchnnparalleldistributeddataparallel) - this is for gradient synchronization and model weight syncing at initialization. We just call this after we've already constructed our models.
 
 ```diff
++from torch.nn.parallel import DistributedDataParallel
+
  with device: 
      model = AutoModelForCausalLM.from_config(config, torch_dtype=dtype)
+
 +model = DistributedDataParallel(model, device_ids=[rank], output_device=rank)
 ```
 
@@ -207,6 +212,8 @@ As [discussed above](#gradient-synchronization---torchnnparalleldistributeddatap
 As [discussed above](#splitting-data-across-our-workers---torchutilsdatadistributeddistributedsampler), this will let each rank grab a different subset of the data.
 
 ```diff
++from torch.utils.data.distributed import DistributedSampler
+
  dataloader = DataLoader(
      train_data,
      batch_size=args.batch_size,
