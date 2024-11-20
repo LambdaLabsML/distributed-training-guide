@@ -43,9 +43,9 @@ Quick jump:
 
 Before we get into the changes required to do distributed training, let's think a little bit. If you've ever done parallel computations before, you know one way to achieve parallelization is to simply split your workload over all your cores. This is really useful if your task is relatively the same for all of the things you want to process. In fact, this is how python's multiprocessing.Pool.map object works.
 
-Well distributed training with a GPU actually works the same way - we are splitting our workload (which is the batches from our dataset) over multiple GPUs.
+Well distributed training with a GPU actually works the same way - we are splitting our workload (which is the batches from our dataset) over multiple GPUs. Here is a high level depiction of how a single step of training works when using DDP:
 
-<img width="818" alt="image" src="https://github.com/user-attachments/assets/acaaef83-28f4-4d1d-bbeb-0a6dc5a555bf">
+<img width="800" alt="image" src="https://github.com/user-attachments/assets/e228d298-30dc-4c3d-a550-e88ab55ddd93">
 
 However we have an additional problem: how do we ensure that the model on all of our GPUs is the same?
 
