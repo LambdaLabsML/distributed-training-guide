@@ -35,6 +35,8 @@ Sharding is a **data parallel** technique! **NOT** a model/tensor/pipeline paral
 
 ## PyTorch FullyShardedDataParallel (FSDP)
 
+<img width="669" alt="image" src="https://github.com/user-attachments/assets/38b7580d-7cda-415e-8d6f-4d318826c273">
+
 At a high level FSDP works as follow:
 
 - In constructor:
@@ -52,10 +54,6 @@ At a high level FSDP works as follow:
 Reference description of the process (from pytorch docs):
 
 ![image](https://pytorch.org/assets/images/fsdp_workflow.png)
-
-And another visualiation of the forward pass:
-
-<img width="709" alt="image" src="https://github.com/user-attachments/assets/8506f538-ec17-4188-bf09-f5b2915b55af">
 
 References:
 - [FSDP Internals](https://pytorch.org/docs/stable/notes/fsdp.html#fsdp-notes) (Very useful)
