@@ -1,22 +1,4 @@
-# Sharding Across GPUs
-
-NOTE: This chapter's code builds off of [chapter 3](../03-multi-node/)'s code.
-
-Up to this point we have assumed that both the model & optimizer fully fit on a single GPU. So each GPU during our training process fully contains a copy of the model and optimizer.
-
-This becomes an issue once the model becomes big enough - either the model itself cannot fit, or the optimizer (which usually contains 1-4x the memory of the model) cannot fit anymore.
-
-Sharding refers to spreading the **storage** of a combination of: optimizer state, gradients, and/or model parameters **across your GPUs**. **The execution of layers DOES NOT CHANGE**.
-
-What this means:
-
-1. Each layer of your model still needs to pull the **entire** layer's parameters/gradients/optimizer states into GPU memory. After the layer is done, then those pieces are resharded.
-2. There are synchronization costs to un-shard and re-shard before and after each layer.
-3. Sharding does not reduce the peak memory cost of your biggest layer.
-
-**Sharding is a data parallel technique! NOT a model/tensor/pipeline parallel technique**
-
-## DeepSpeed ZeRO
+# DeepSpeed ZeRO
 
 Install deepspeed: `pip install deepspeed`
 
@@ -36,9 +18,9 @@ References:
 - [ZeRO-Offload: Democratizing Billion-Scale Model Training](https://arxiv.org/abs/2101.06840)
 - [ZeRO-Infinity: Breaking the GPU Memory Wall for Extreme Scale Deep Learning](https://arxiv.org/abs/2104.07857)
 
-### Integrating DeepSpeed into training code
+## Integrating DeepSpeed into training code
 
-#### Argument Parsing
+### Argument Parsing
 
 ```diff
 @@ -305,11 +302,10 @@ def _get_parser() -> argparse.ArgumentParser:
@@ -49,7 +31,7 @@ References:
      return parser
 ```
 
-#### Initialization
+### Initialization
 
 Two main differences here:
 1. We call `deepspeed.init_distributed` instead of using pytorch's `init_process_group`
@@ -100,7 +82,7 @@ Two main differences here:
      )
 ```
 
-#### Train Loop
+### Train Loop
 
 Here we are just going to be replacing our pytorch calls with deepspeed calls. Note that we don't have direct access to optimizer/lr_scheduler anymore since deepspeed handles that.
 
@@ -123,7 +105,7 @@ Here we are just going to be replacing our pytorch calls with deepspeed calls. N
              state["epoch_step"] += 1
 ```
 
-#### Checkpoints
+### Checkpoints
 
 Loading becomes:
 
@@ -155,7 +137,7 @@ Saving becomes: (**NOTE**: saving must be done on ALL ranks instead of just rank
                  dist.barrier()
 ```
 
-### Configuration
+## Configuration
 
 ```json
 {
@@ -185,7 +167,7 @@ Saving becomes: (**NOTE**: saving must be done on ALL ranks instead of just rank
 }
 ```
 
-### Command
+## Command
 
 ```bash
 cd distributed-training-guide/05-sharding-deepspeed
