@@ -55,7 +55,7 @@ Reference description of the process (from pytorch docs):
 
 And another visualiation of the forward pass:
 
-<img width="850" alt="image" src="https://github.com/user-attachments/assets/71935c36-d8b0-4e23-b416-26dcf35ecfdb">
+<img width="709" alt="image" src="https://github.com/user-attachments/assets/8506f538-ec17-4188-bf09-f5b2915b55af">
 
 References:
 - [FSDP Internals](https://pytorch.org/docs/stable/notes/fsdp.html#fsdp-notes) (Very useful)
