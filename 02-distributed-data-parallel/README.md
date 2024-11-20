@@ -178,7 +178,7 @@ This is a helpful thing to do to handle all the processes outputting to the same
  with device: 
      model = AutoModelForCausalLM.from_config(config, torch_dtype=dtype)
 
-+model = DistributedDataParallel(model, device_ids=[rank], output_device=rank)
++model = DistributedDataParallel(model, device_ids=[local_rank])
 ```
 
 Funnily enough you might assume that the DDP module splits batches across processes, but that is not what it does at all!
