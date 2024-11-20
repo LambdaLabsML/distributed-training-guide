@@ -36,10 +36,9 @@ def main():
     dist.init_process_group()
 
     rank = dist.get_rank()
+    local_rank = rank % torch.cuda.device_count()
     world_size = dist.get_world_size()
-    assert world_size == torch.cuda.device_count()
 
-    # NOTE: including rank here so we don't have to add to every log statement
     logging.basicConfig(
         format=f"[rank={rank}] [%(asctime)s] %(levelname)s:%(message)s",
         level=logging.INFO,
@@ -47,25 +46,24 @@ def main():
 
     LOGGER.info(os.environ)
     LOGGER.info(args)
-    LOGGER.info(f"rank={rank} world size={world_size}")
+    LOGGER.info(f"local_rank={local_rank} rank={rank} world_size={world_size}")
 
-    # NOTE: we use rank here in our device initialization
-    device = torch.device(f"cuda:{rank}")
+    device = torch.device(f"cuda:{local_rank}")
     dtype = torch.bfloat16
-    # NOTE: this is necessary to call before calling any other distributed code
     torch.cuda.set_device(device)
 
     torch.manual_seed(args.seed)
 
+    # NOTE: assumes $HF_HOME is shared storage
     with rank0_first():
         config = AutoConfig.from_pretrained(args.model_name, use_cache=False)
         with device:
             model = AutoModelForCausalLM.from_config(config, torch_dtype=dtype)
     LOGGER.info(f"{sum(p.numel() for p in model.parameters())} model parameters")
 
-    model = DistributedDataParallel(model, device_ids=[rank], output_device=rank)
+    model = DistributedDataParallel(model, device_ids=[local_rank])
 
-    # NOTE: since this can download data, make sure to do the main process first
+    # NOTE: Assumes that $HF_HOME is shared storage
     with rank0_first():
         train_data = _load_and_preprocess_data(args, config)
     LOGGER.info(f"{len(train_data)} training samples")
