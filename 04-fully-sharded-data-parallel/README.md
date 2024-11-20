@@ -1,6 +1,6 @@
 # Sharding Across GPUs
 
-**NOTE: This chapter's code builds off of [chapter 3](../03-multi-node)'s code.**
+**NOTE: This chapter's code builds off of [chapter 2](../02-distributed-data-parallel/)'s code.**
 
 Up to this point we have assumed that both the model & optimizer fully fit on a single GPU. So each GPU during our training process fully contains a copy of the model and optimizer.
 
@@ -266,7 +266,7 @@ https://pytorch.org/tutorials/recipes/distributed_checkpoint_recipe.html#formats
 Same command as normal:
 
 ```bash
-cd distributed-training-guide/05-sharding-fsdp
+cd distributed-training-guide/04-sharding-fsdp
 export TORCHELASTIC_ERROR_FILE=../error.json
 export OMP_NUM_THREADS=1
 export HF_HOME=../.cache

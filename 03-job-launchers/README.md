@@ -1,6 +1,6 @@
 # Job Launchers
 
-**NOTE: This chapter's code is identical to [chapter 3](../03-multi-node)'s code, so the command uses the training script from chapter 3.** If the job launcher requires code changes to work, the code changes will be called out.
+**NOTE: This chapter's code is identical to [chapter 2](../02-distributed-data-parallel/)'s code, so the command uses the training script from chapter 2.** If the job launcher requires code changes to work, the code changes will be called out.
 
 Since it is quite cumbersome to manually SSH into every node and start a training job, there are various ways to launch distributed training jobs from a single node.
 
@@ -26,7 +26,7 @@ Put your list of hostnames/IPs in a file called `hosts`. Each line represents a 
 Then we can use ssh to launch `torchrun` on each of the hosts. This command is very similar to our previous bash command, except we are using `torchrun` (`python -m torch.distributed.run`) instead of just invoking our python script.
 
 ```bash
-cd distributed-training-guide/04-job-launchers
+cd distributed-training-guide/03-job-launchers
 JOB_NAME=multi-node-tmux
 xargs -a hosts -I {} \
     ssh {} tmux new-session -d -s $JOB_NAME -c $(pwd) \
@@ -41,7 +41,7 @@ xargs -a hosts -I {} \
     --nproc-per-node gpu \
     --redirects 3 \
     --log-dir ../logs \
-    ../03-multi-node/train_llm.py \
+    ../02-distributed-data-parallel/train_llm.py \
     --experiment-name $JOB_NAME \
     --dataset-name tatsu-lab/alpaca \
     --model-name openai-community/gpt2
@@ -75,7 +75,7 @@ slurm is a very popular job scheduling software often used with clusters.
 Submit the training job using the provided `job.sbatch` script:
 
 ```bash
-cd distributed-training-guide/04-job-launchers
+cd distributed-training-guide/03-job-launchers
 sbatch --nnodes 2 --gpus 16 --cpus-per-task 8 job.sbatch
 ```
 
@@ -110,7 +110,7 @@ srun torchrun \
     --nproc-per-node ${SLURM_GPUS_ON_NODE} \
     --redirects 3 \
     --log-dir ${SLURM_SUBMIT_DIR}/logs \
-    ../03-multi-node/train_llm.py \
+    ../02-distributed-data-parallel/train_llm.py \
     --experiment-name gpt2-alpaca-slurm-$(date +%Y-%m-%dT%H-%M-%S) \
     --dataset-name tatsu-lab/alpaca \
     --model-name openai-community/gpt2
@@ -135,7 +135,7 @@ Use MPI environment variables when initializing the process group:
 ### Command
 
 ```bash
-cd distributed-training-guide/04-job-launchers
+cd distributed-training-guide/03-job-launchers
 mpirun \
     -H <host 1>:<gpus on 1>,...,<host n>:<gpus on n> \
     -x MASTER_ADDR=<host 1> \
@@ -192,7 +192,7 @@ Use it when initializing local_rank:
 ### Command
 
 ```bash
-cd distributed-training-guide/04-job-launchers
+cd distributed-training-guide/03-job-launchers
 export HF_HOME=../.cache
 export TORCHELASTIC_ERROR_FILE=../error.json
 export OMP_NUM_THREADS=1

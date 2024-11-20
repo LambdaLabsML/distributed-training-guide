@@ -1,10 +1,10 @@
 # Training a 405B model
 
-**NOTE: This chapter's code builds off of [chapter 5's FSDP code](../05-sharding-fsdp/).**
+**NOTE: This chapter's code builds off of [chapter 4's FSDP code](../04-sharding-fsdp/).**
 
 Here we are going to utilize an 8 node cluster (64 H100 GPUs) to train Llama 3.1 405B. **This does not utilize LORA!** We are actually fully training the weights of a 405b model in plain pytorch.
 
-The next few sections go through various changes we have to make to our FSDP code from chapter 5 to make training a 405b model work.
+The next few sections go through various changes we have to make to our FSDP code from chapter 4 to make training a 405b model work.
 
 Quick Jump:
 - [Use flash attention](#use-flash-attention)
@@ -58,14 +58,14 @@ Node local storage is **much** faster when initializing. For some numbers, while
 There's a download script in this repo for utility, run this on node 0:
 
 ```bash
-cd distributed-training-guide/06-training-llama-405b
+cd distributed-training-guide/05-training-llama-405b
 python download.py
 ```
 
 And run this on the other nodes (to download config & tokenizer):
 
 ```bash
-cd distributed-training-guide/06-training-llama-405b
+cd distributed-training-guide/05-training-llama-405b
 python download.py --skip-model
 ```
 
@@ -78,10 +78,10 @@ When we actual load the weights, it will take some time AND takes a lot of memor
 There's three parts to this:
 
 1. Loading the weights into RAM only on `rank==0`
-2. Using the [meta](../05-sharding-fsdp/README.md#initialization-after-sharding---the-meta-device) device on `rank>0`
+2. Using the [meta](../04-sharding-fsdp/README.md#initialization-after-sharding---the-meta-device) device on `rank>0`
 3. Using `from_config` instead of `from_pretrained` on `rank>0` so we don't need to download the weights on all the nodes.
    1. Note that if you have the weights on a shared network drive, you can just use `from_pretrained` instead.
-4. Enabling [sync_module_states](../05-sharding-fsdp/README.md#sync_module_states) in FSDP constructor
+4. Enabling [sync_module_states](../04-sharding-fsdp/README.md#sync_module_states) in FSDP constructor
 
 You might think of using the `device_map` feature of `transformers` - e.g. `device_map="auto"` tries to smartly fill up memory. However if you try this approach you'll end up with out of memory errors when FSDP tries to start sending memory to the GPU.
 
@@ -96,13 +96,13 @@ else:
         model = AutoModelForCausalLM.from_config(config, torch_dtype=dtype)
 ```
 
-Then later, sync_module_states in [FSDP constructor](../05-sharding-fsdp/README.md#the-fsdp-constructor) will make sure the weights are broadcasted from rank 0 to the other ranks.
+Then later, sync_module_states in [FSDP constructor](../04-sharding-fsdp/README.md#the-fsdp-constructor) will make sure the weights are broadcasted from rank 0 to the other ranks.
 
 ## Sharding Llama 405B
 
 Determining what layers you should shard is complex. If you are using `transformers`, they include a private attribute on classes called [_no_split_modules](https://github.com/huggingface/transformers/blob/v4.45.1/src/transformers/models/llama/modeling_llama.py#L784) that will contain classes that you should not shard anything under them. E.g. for Llama this attribute just contains `LlamaDecoderLayer`. So that is what we will wrap! During testing I also found that sharding the `nn.Embedding` layer at the beginning of the network improved throughput and reduced memory usage.
 
-We can use the [transformer_auto_wrap_policy()](https://github.com/pytorch/pytorch/blob/main/torch/distributed/fsdp/wrap.py#L307C5-L307C33) to target the specific classes for those layers, and pass that as our [auto_wrap_policy in the FSDP constructor](../05-sharding-fsdp/README.md#what-layers-to-shard---the-auto_wrap_policy):
+We can use the [transformer_auto_wrap_policy()](https://github.com/pytorch/pytorch/blob/main/torch/distributed/fsdp/wrap.py#L307C5-L307C33) to target the specific classes for those layers, and pass that as our [auto_wrap_policy in the FSDP constructor](../04-sharding-fsdp/README.md#what-layers-to-shard---the-auto_wrap_policy):
 
 ```python
 from torch.distributed.fsdp.wrap import transformer_auto_wrap_policy
@@ -115,7 +115,7 @@ wrap_policy = functools.partial(
 FSDP(..., auto_wrap_policy=wrap_policy)
 ```
 
-Please consult [our explanation on the FSDP constructor](../05-sharding-fsdp/README.md#the-fsdp-constructor) for more info.
+Please consult [our explanation on the FSDP constructor](../04-sharding-fsdp/README.md#the-fsdp-constructor) for more info.
 
 As a reminder - this will cause FSDP to gather all the parameters for each DecoderLayer (which includes Attention, Linear, and various norm modules), and shard them across the world. At the start of forward/backward pass FSDP will issue an all-gather so all the nodes have the full weights in memory, and at the end of the DecoderLayer forward/backward, it will free up the full weights again.
 
@@ -144,7 +144,7 @@ apply_activation_checkpointing(
 
 ## CPU Offload & fused optimizer kernels
 
-Since the model is so large, we pretty much have to enable [CPU offloading](../05-sharding-fsdp/README.md#cpu-offload) with FSDP. **When using CPUOffload feature of FSDP, the optimizer entirely runs on the CPU**. This is because there is significant cost to transfer data to and from the GPU when doing `optimizer.step()`. At the time of this being written there are open issues on how to overlap the `optimizer.step()` with the next `forward()` call.
+Since the model is so large, we pretty much have to enable [CPU offloading](../04-sharding-fsdp/README.md#cpu-offload) with FSDP. **When using CPUOffload feature of FSDP, the optimizer entirely runs on the CPU**. This is because there is significant cost to transfer data to and from the GPU when doing `optimizer.step()`. At the time of this being written there are open issues on how to overlap the `optimizer.step()` with the next `forward()` call.
 
 By default the optimizers will use non-fused kernel when running on the CPU which will generate a lot of intermediate tensors. By explicitly using the fused kernel we get a lot of speedup, which is especially important since we are running that step on the CPU:
 
@@ -170,12 +170,12 @@ optimizer.zero_grad(set_to_none=args.cpu_offload == "off")
 
 ## Launch command
 
-That's pretty much all the changes you need from our base [FSDP code](../05-sharding-fsdp/). Now let's launch!
+That's pretty much all the changes you need from our base [FSDP code](../04-sharding-fsdp/). Now let's launch!
 
 We provide a customized [launch.sh](./launch.sh) script here based on the bash command for spawning torchrun on all available nodes:
 
 ```bash
-cd distributed-training-guide/06-training-llama-405b
+cd distributed-training-guide/05-training-llama-405b
 bash launch.sh # NOTE: this is non blocking
 ```
 
@@ -188,14 +188,14 @@ You can change the hostnames in the [hosts](./hosts) file in this directory.
 We are using torchrun in our [launch.sh](./launch.sh) script, so we will get an output directory per node with a bunch of sub directories with our log files in them. It's a bit of a pain to manually monitor these, so here's a bash command for tailing all of them at once:
 
 ```bash
-cd distributed-training-guide/06-training-llama-405b
+cd distributed-training-guide/05-training-llama-405b
 find ../logs/ -name \*stderr.log | xargs tail -f
 ```
 
 Additionally, we have a top like utility script for monitoring the entire cluster at the top level of this directory:
 
 ```bash
-cd distributed-training-guide/06-training-llama-405b
+cd distributed-training-guide/05-training-llama-405b
 python ../top-cluster.py hosts
 ```
 
