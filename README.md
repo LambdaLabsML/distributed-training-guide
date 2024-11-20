@@ -1,8 +1,22 @@
 # Distributed Training Guide
 
-This guide aims at a comprehensive guide on best practices for distributed training, diagnosing errors, and fully utilize all resources available.
+Ever wondered how to train a large neural network across a giant cluster? Look no further!
 
-## Questions this guide answers:
+This is a comprehensive guide on best practices for distributed training, diagnosing errors, and fully utilizing all resources available. It is organized into sequential chapters, each with a `README.md` and a `train_llm.py` script in them. The readme will discuss both the high level concepts of distributed training, and the code changes introduced in that chapter.
+
+The guide is written entirely in very minimal standard pytorch, using `transformers` and `datasets` for models and data, respectively. No other library is used for distributed code - the distributed stuff is entirely in pytorch.
+
+1. [Chapter 1](./01-single-gpu/) - A standard Causal LLM training script that runs on a **single GPU**.
+2. [Chapter 2](./02-distributed-data-parallel/) - Upgrades the training script to support **multiple GPUs and to use DDP**.
+3. [Chapter 3](./03-job-launchers/) - Covers how to **launch training jobs** across clusters with multiple nodes.
+4. [Chapter 4](./04-fully-sharded-data-parallel/) - Upgrades the training script to **use FSDP** instead of DDP for more optimal memory usage.
+5. [Chapter 5](./05-training-llama-405b/) - Upgrades the training script to **train Llama-405b**.
+6. [Alternative Frameworks](./alternative-frameworks/) - Covers different frameworks that all work with pytorch under the hood.
+7. [Diagnosing Errors](./diagnosing-errors/) - Best practices and how tos for **quickly diagnosing errors** in your cluster.
+8. [Related Topics](./related-topics/) - Topics that you should be aware of when distributed training.
+
+
+Questions this guide answers:
 
 - How do I update a single gpu training/fine tuning script to run on multiple GPUs or multiple nodes?
 - How do I diagnose hanging/errors that happen during training?
@@ -10,15 +24,9 @@ This guide aims at a comprehensive guide on best practices for distributed train
 - How do I schedule/launch training on a cluster?
 - How do I scale my hyperparameters when increasing the number of workers?
 
----
-
 Best practices for logging stdout/stderr and wandb are also included, as logging is vitally important in diagnosing/debugging training runs on a cluster.
 
-## How to read
-
-This guide is organized into sequential chapters, each with a `README.md` and a `train_llm.py` script in them. The readme will discuss the changes introduced in that chapter, and go into more details.
-
-**Each of the training scripts is aimed at training a causal language model (i.e. gpt).**
+Each of the training scripts is aimed at training a causal language model (i.e. gpt/llama).
 
 ## Set up
 
