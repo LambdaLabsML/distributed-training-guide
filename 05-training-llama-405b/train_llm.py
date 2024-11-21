@@ -29,8 +29,7 @@ from torch.distributed.checkpoint.state_dict import (
     set_state_dict,
     StateDictOptions,
 )
-from torch.distributed.checkpoint.state_dict_loader import load
-from torch.distributed.checkpoint.state_dict_saver import save
+from torch.distributed.checkpoint import load, save
 
 
 import wandb

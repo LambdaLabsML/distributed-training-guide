@@ -186,8 +186,7 @@ from torch.distributed.checkpoint.state_dict import (
     set_state_dict,
     StateDictOptions,
 )
-from torch.distributed.checkpoint.state_dict_loader import load
-from torch.distributed.checkpoint.state_dict_saver import save
+from torch.distributed.checkpoint import load, save
 ```
 
 Additionally, we are going to set up our [StateDictOptions](https://pytorch.org/docs/stable/distributed.checkpoint.html#torch.distributed.checkpoint.state_dict.StateDictOptions), because it is used multiple places:
