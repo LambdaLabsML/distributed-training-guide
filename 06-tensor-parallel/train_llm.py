@@ -64,6 +64,7 @@ def main():
     LOGGER.info(os.environ)
     LOGGER.info(args)
     LOGGER.info(f"local_rank={local_rank} rank={rank} world size={world_size}")
+    LOGGER.info(f"dp_size={mesh['dp'].size()} tp_size={mesh['tp'].size()}")
 
     device = torch.device(f"cuda:{local_rank}")
     dtype = torch.bfloat16
@@ -88,10 +89,6 @@ def main():
             "model.embed_tokens": tp.RowwiseParallel(
                 input_layouts=Replicate(),
                 output_layouts=Shard(1),
-            ),
-            "model.rotary_emb": tp.PrepareModuleInput(
-                input_kwarg_layouts={"position_ids": Shard(1)},
-                desired_input_kwarg_layouts={"position_ids": Replicate()},
             ),
         },
     )

@@ -197,10 +197,6 @@ tp.parallelize_module(
             input_layouts=Replicate(),
             output_layouts=Shard(1),
         ),
-        "model.rotary_emb": tp.PrepareModuleInput(
-            input_kwarg_layouts={"position_ids": Shard(1)},
-            desired_input_kwarg_layouts={"position_ids": Replicate()},
-        ),
     },
 )
 ```
