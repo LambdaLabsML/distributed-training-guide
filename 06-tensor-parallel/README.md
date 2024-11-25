@@ -188,6 +188,10 @@ Because each of our GPUs is now no longer the unit, we just need to update our t
     ```
 </details>
 
+#### Embedding layer
+
+Our model starts off with the embedding layer so we start there:
+
 ```python
 tp.parallelize_module(
     model,
@@ -200,6 +204,12 @@ tp.parallelize_module(
     },
 )
 ```
+
+Here we are telling pytorch to parallelize the embed_tokens layer in rowwise fashion [(See our section above for how this works)](#parallelizing-embedding-with-rowwiseparallel). Here we specify that the inputs that this layer receives are replicated across all of our gpus (due to our changes to [DistributedSampler above](#all-gpus-on-a-node-must-have-identical-inputs)). We also specify that the outputs of this will have dimension 1 sharded, which is not the default behavior. We do this to optimize a bit, because the first layer in our decoder layer is a sequence parallel layer, which will need the input sharded on dimension 1. So we are saving a bit of computation from this.
+
+#### Decoder layers
+
+Next we start parallelizing the decoder layers:
 
 ```python
 for layer in model.model.layers:
@@ -236,6 +246,65 @@ for layer in model.model.layers:
     )
 ```
 
+First we need to adjust some local variables that the decoder layers have for computing attention:
+
+```python
+layer.self_attn.num_heads //= mesh["tp"].size()
+layer.self_attn.num_key_value_heads //= mesh["tp"].size()
+```
+
+Then we have the first sequence parallel usage on our first input_layernorm:
+
+```python
+# SequenceParallel will apply sharding to sequence dimension.
+"input_layernorm": tp.SequenceParallel(),
+# The input to self_attn (which is the output from the SequenceParallel input_layer_norm) will be sharded on dimension 1, but we wanted it to be the whole tensor.
+"self_attn": tp.PrepareModuleInput(
+    input_kwarg_layouts={
+        "hidden_states": Shard(dim=1),
+    },
+    desired_input_kwarg_layouts={"hidden_states": Replicate()},
+),
+```
+
+I'm including the prepare module input here because we need that from using the sequence parallel. Remember, sequence parallel shards the input across the sequence dimension, but all of our other tensor parallel approaches require replicated input.
+
+So from the above configuration, when we pass the output from `input_layernorm` into `self_attn`, we will transform the `hidden_states` variable from a sharded tensor to a replicated tensor.
+
+Next we have our self attention block:
+
+```python
+"self_attn.q_proj": tp.ColwiseParallel(),
+"self_attn.k_proj": tp.ColwiseParallel(),
+"self_attn.v_proj": tp.ColwiseParallel(),
+"self_attn.o_proj": tp.RowwiseParallel(output_layouts=Shard(1)),
+```
+
+Here we are sharding all of our q, k, and v matrices using [colwise parallel](#colwise-linear). Because we adjusted our num_heads/num_key_value_heads in the loop, our attention implementation will just work with the smaller matrices. Finally, because we can [chain linears](#chaining-colwise--rowwise-linears), we can set up the final output linear layer as a [rowise linear](#rowwise-linear). Similar to our embedding layer, we specify the output as sharded on dimension 1 to optimize the input for the next sequence parallel layer:
+
+```python
+"post_attention_layernorm": tp.SequenceParallel(),
+"mlp": tp.PrepareModuleInput(
+    input_layouts=Shard(dim=1), desired_input_layouts=Replicate()
+),
+```
+
+This is pretty much identical to the first sequence parallel block we had.
+
+Our final piece of parallelization is the MLP block which works very similarly to our self attention:
+
+```python
+"mlp.gate_proj": tp.ColwiseParallel(),
+"mlp.up_proj": tp.ColwiseParallel(),
+"mlp.down_proj": tp.RowwiseParallel(output_layouts=Shard(1)),
+```
+
+Again see the visualization of [chained linears](#chaining-colwise--rowwise-linears) for how this works.
+
+### Vocab output layer
+
+Our final layer in the model is a remaining `SequenceParallel` layer followed by a `Linear` layer.
+
 ```python
 tp.parallelize_module(
     model,
@@ -250,3 +319,8 @@ tp.parallelize_module(
     },
 )
 ```
+
+Here we don't need a `PrepareModuleInput` after the `SequenceParallel` because we just have 1 module that uses the input. So we specify the `input_layouts` of the colwise parallel as `Shard(1)`.
+
+We also need to `use_local_output=True` so our loss calculation works properly.
+
