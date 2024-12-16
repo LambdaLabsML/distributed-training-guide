@@ -1,5 +1,9 @@
 # Distributed Training Guide
 
+<img src="https://lambdalabs.com/hubfs/distriubuted-training-guide.png" width="400px" />
+
+[Neurips 2024 presentation slides here](https://docs.google.com/presentation/d/1ANMmkOGaruYKTvhnsAbZgI9GrdMliNvibWGuNYw6HX8/edit?usp=sharing)
+
 Ever wondered how to train a large neural network across a giant cluster? Look no further!
 
 This is a comprehensive guide on best practices for distributed training, diagnosing errors, and fully utilizing all resources available. It is organized into sequential chapters, each with a `README.md` and a `train_llm.py` script in them. The readme will discuss both the high level concepts of distributed training, and the code changes introduced in that chapter.
