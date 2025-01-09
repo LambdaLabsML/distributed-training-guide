@@ -76,7 +76,7 @@ def main():
 
     with rank_ordered(should_go_first=local_rank == 0):
         config = AutoConfig.from_pretrained(args.model_name, use_cache=False)
-        with torch.device("meta"):
+        with device:
             model = AutoModelForCausalLM.from_config(
                 config, torch_dtype=dtype, attn_implementation="flash_attention_2"
             )

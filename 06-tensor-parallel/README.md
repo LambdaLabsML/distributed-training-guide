@@ -157,35 +157,33 @@ Because each of our GPUs is now no longer the unit, we just need to update our t
 <details>
     <summary>For reference, here is the architecture for 405B:</summary>
 
-    ```python
     LlamaForCausalLM(
-    (model): LlamaModel(
-        (embed_tokens): Embedding(128256, 16384)
-        (layers): ModuleList(
-        (0-125): 126 x LlamaDecoderLayer(
-            (self_attn): LlamaSdpaAttention(
-            (q_proj): Linear(in_features=16384, out_features=16384, bias=False)
-            (k_proj): Linear(in_features=16384, out_features=1024, bias=False)
-            (v_proj): Linear(in_features=16384, out_features=1024, bias=False)
-            (o_proj): Linear(in_features=16384, out_features=16384, bias=False)
+        (model): LlamaModel(
+            (embed_tokens): Embedding(128256, 16384)
+            (layers): ModuleList(
+                (0-125): 126 x LlamaDecoderLayer(
+                    (self_attn): LlamaSdpaAttention(
+                        (q_proj): Linear(in_features=16384, out_features=16384, bias=False)
+                        (k_proj): Linear(in_features=16384, out_features=1024, bias=False)
+                        (v_proj): Linear(in_features=16384, out_features=1024, bias=False)
+                        (o_proj): Linear(in_features=16384, out_features=16384, bias=False)
+                        (rotary_emb): LlamaRotaryEmbedding()
+                    )
+                    (mlp): LlamaMLP(
+                        (gate_proj): Linear(in_features=16384, out_features=53248, bias=False)
+                        (up_proj): Linear(in_features=16384, out_features=53248, bias=False)
+                        (down_proj): Linear(in_features=53248, out_features=16384, bias=False)
+                        (act_fn): SiLU()
+                    )
+                    (input_layernorm): LlamaRMSNorm((16384,), eps=1e-05)
+                    (post_attention_layernorm): LlamaRMSNorm((16384,), eps=1e-05)
+                )
+            )
+            (norm): LlamaRMSNorm((16384,), eps=1e-05)
             (rotary_emb): LlamaRotaryEmbedding()
-            )
-            (mlp): LlamaMLP(
-            (gate_proj): Linear(in_features=16384, out_features=53248, bias=False)
-            (up_proj): Linear(in_features=16384, out_features=53248, bias=False)
-            (down_proj): Linear(in_features=53248, out_features=16384, bias=False)
-            (act_fn): SiLU()
-            )
-            (input_layernorm): LlamaRMSNorm((16384,), eps=1e-05)
-            (post_attention_layernorm): LlamaRMSNorm((16384,), eps=1e-05)
         )
-        )
-        (norm): LlamaRMSNorm((16384,), eps=1e-05)
-        (rotary_emb): LlamaRotaryEmbedding()
+        (lm_head): Linear(in_features=16384, out_features=128256, bias=False)
     )
-    (lm_head): Linear(in_features=16384, out_features=128256, bias=False)
-    )
-    ```
 </details>
 
 #### Embedding layer
@@ -323,4 +321,17 @@ tp.parallelize_module(
 Here we don't need a `PrepareModuleInput` after the `SequenceParallel` because we just have 1 module that uses the input. So we specify the `input_layouts` of the colwise parallel as `Shard(1)`.
 
 We also need to `use_local_output=True` so our loss calculation works properly.
+
+## Throughput
+
+Here are some results from launching on a single node of 8x H100s:
+
+Command:
+```bash
+HF_HOME=/home/ubuntu/.cache/huggingface OMP_NUM_THREADS=26 torchrun --standalone --nproc-per-node gpu train_llm.py --experiment-name tp-llama-8b --dataset-name tatsu-lab/alpaca --model-name meta-llama/Llama-3.1-8B --log-freq 10 --batch-size 19 --seq-length 1024
+```
+
+15k tok/s
+
+TODO put graph of loss decreasing & throughput?
 
