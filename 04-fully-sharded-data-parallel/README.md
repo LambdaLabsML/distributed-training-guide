@@ -81,7 +81,6 @@ Here is our [FSDP constructor](https://pytorch.org/docs/stable/fsdp.html#torch.d
 model = FullyShardedDataParallel(
     model,
     device_id=local_rank,
-    param_init_fn=safe_param_init_fn,
     sync_module_states=True,
     auto_wrap_policy=wrap_policy,
     sharding_strategy=ShardingStrategy.FULL_SHARD,
@@ -93,28 +92,16 @@ model = FullyShardedDataParallel(
 
 ##### reset_parameters()
 
-In most cases, if you just want to apply `reset_parameters()` - you actually don't have to specify this parameter. However some models (e.g. Llama 2/3.1) have modules that do not implement `reset_parameters()`. In this chapter we show how to implement a simple version of param_init_fn that is identical to the default FSDP, but just checks for the existence of reset_parameters.
+In most cases, if you just want to apply `reset_parameters()` - you actually don't have to specify this parameter. However some models (e.g. Llama 2/3.1) have modules that do not implement `reset_parameters()`. 
 
-From pytorch documentation:
-
-> As of v1.12, FSDP detects modules with parameters or buffers on meta device via is_meta and either applies `param_init_fn` if specified or calls nn.Module.reset_parameters() otherwise.
-
-You can see how the default behavior is specified in the pytorch source code [torch/distributed/fsdp/_init_utils.py#L889-L890](https://github.com/pytorch/pytorch/blob/v2.4.0/torch/distributed/fsdp/_init_utils.py#L889-L890)
+It is suggested that you implement them manually. Here is what we do for our llama models:
 
 ```python
-def safe_param_init_fn(module: torch.nn.Module):
-    """
-    For use in FSDP constructor. This is identical to default behavior of FSDP when dealing with meta device,
-    except pytorch code doesn't check for existence of `reset_parameters()` before calling it. Some modules
-    don't have this implemented, so this is our "fix" for it.
-    """
-    # NOTE: according to FSDP.__init__.param_init_fn documnetaiton, we should set recurse=False
-    module.to_empty(device=device, recurse=False)
-    # NOTE: Since we are training from scratch here, we just reset the parameters,
-    #       otherwise we may want to load in weights directly here, or load
-    #       parameters on rank 0 and use sync_module_states=True in FSDP constructor.
-    if hasattr(module, "reset_parameters"):
-        module.reset_parameters()
+from transformers.models.llama.modeling_llama import LlamaRMSNorm, LlamaRotaryEmbedding
+
+# fixes for reset_parameters not existing
+LlamaRMSNorm.reset_parameters = lambda self: torch.nn.init.ones_(self.weight)
+LlamaRotaryEmbedding.reset_parameters = lambda _: None
 ```
 
 ##### Loading a checkpoint
