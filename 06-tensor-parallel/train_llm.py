@@ -85,12 +85,7 @@ def main():
     tp.parallelize_module(
         model,
         mesh["tp"],
-        {
-            "model.embed_tokens": tp.RowwiseParallel(
-                input_layouts=Replicate(),
-                output_layouts=Shard(1),
-            ),
-        },
+        {"model.embed_tokens": tp.ColwiseParallel()},
     )
     for layer in model.model.layers:
         # Have the adjust these values since we are sharding the linear layers

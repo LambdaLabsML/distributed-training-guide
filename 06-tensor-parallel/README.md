@@ -1,4 +1,4 @@
-# Tensor Parallelism
+# Tensor Parallelism (TP)
 
 So far we've just been using data parallel techniques. You may have heard of other parallelism techniques, and indeed the [Llama 405B paper](https://ai.meta.com/research/publications/the-llama-3-herd-of-models/) actually uses 4D parallelism when training the 405B model:
 
@@ -11,10 +11,12 @@ In this chapter we are going to diving into what tensor parallelism is, before w
 
 ## Basics: What is tensor parallelism?
 
-In one sentence: multiple GPUs are now the "unit" instead of a single gpu.
+TP splits the model weights & computation across multiple GPUs.
 
-We will be treating an entire node as the execution unit:
-1. The model is sharded internal to the node
+Sharded data parallel does split the model weights, but it gathers them back for the computation. The computation bit being split across GPUs is the difference.
+
+We will be treating an entire node of GPUs as the execution unit:
+1. The model is sharded across the GPUs on the node.
 2. Every *GPU* on the node receives **the same input**
 
 It reduces the world size by however many GPUs are in your node, meaning the cost of allgathers/allreduces is reduced. This becomes a big factor when your cluster is large.
@@ -27,37 +29,42 @@ Here are the benefits of this:
 3. Less allgather/allreduce cost
 
 Here are the downsides:
-1. The global batch size is reduced by the number of gpus (`tp_global_batch_size = global_batch_size / num_gpus_per_node`)
+1. The global batch size is reduced
 2. BUT we can now hopefully increase the local batch size per node, since we are reducing peak GPU memory.
 
 Note that this can only really be applied to certain modules, but most of the modules in an LLM work with it.
 
-## Useful References
+## First: ensure all GPUs on a node get the same input
 
-For completeness here are the relevant docs/guides from pytorch on how to achieve this:
-- [TP API docs](https://pytorch.org/docs/stable/distributed.tensor.parallel.html#tensor-parallelism-torch-distributed-tensor-parallel)
-- [2d Parallelism Tutorial](https://pytorch.org/tutorials/intermediate/TP_tutorial.html#large-scale-transformer-model-training-with-tensor-parallel-tp)
-- [Device Mesh tutorial](https://pytorch.org/tutorials/recipes/distributed_device_mesh.html)
-- [PyTorch Lightning TP Tutorial](https://lightning.ai/lightning-ai/studios/tensor-parallelism-supercharging-large-model-training-with-pytorch-lightning)
+First we are going to create our device mesh. This doesn't do anything on its own, but we will be passing this object to other APIs.
 
-## Pytorch's Tensor Parallel API
+```python
+gpus_on_node = torch.cuda.device_count()
+num_nodes = world_size // gpus_on_node
+mesh = dist.device_mesh.init_device_mesh(
+    "cuda",
+    (num_nodes, gpus_on_node),
+    mesh_dim_names=("dp", "tp"),
+)
+```
 
-Here we are going to give a brief explanation of how the api we are going to be using works.
+Now with a small update to our sampler we can pass all of our TP GPUs the same input:
 
-- [tp.RowwiseParallel()](https://pytorch.org/docs/stable/distributed.tensor.parallel.html#torch.distributed.tensor.parallel.RowwiseParallel) shards the module's weights in a row wise fashion.
-    - Inputs by default are sharded on last dimension
-    - Outputs by default are replicated on all workers
-- [tp.ColwiseParallel()](https://pytorch.org/docs/stable/distributed.tensor.parallel.html#torch.distributed.tensor.parallel.ColwiseParallel) shards the module's weights in a col wise fashion.
-    - Inputs by default are replicated on all workers
-    - Outputs by default are sharded on last dimension
-- [tp.SequenceParallel()](https://pytorch.org/docs/stable/distributed.tensor.parallel.html#torch.distributed.tensor.parallel.SequenceParallel) shards the input/output across dimension 1. Module weights are NOT sharded.
-- [tp.PrepareModuleInput()](https://pytorch.org/docs/stable/distributed.tensor.parallel.html#torch.distributed.tensor.parallel.PrepareModuleInput) let's you change the sharding configuration of input tensors
-- `torch.distributed._tensor.Shard(dim=X)` indicates a tensor should be sharded along dimension X
-- `torch.distributed._tensor.Replicate()` indicates a tensor should be replicated among all workers.
+```python
+sampler=DistributedSampler(
+    ...,
+    num_replicas=mesh["dp"].size(),
+    # NOTE: every GPU on a node will have the same "dp" rank,
+    # meaning they will all receive the same input!
+    rank=mesh["dp"].get_local_rank(),
+)
+```
 
-How all of these things interact is actually very subtle and complex, which is why this guide is useful!
+Our new world size is size of the data parallel mesh, and our new rank is our processes rank in the data parallel mesh. Note that all of our processes on the same node will have the same data parallel rank, and this is what we want!
 
-You can also change most of the default behavior with arguments to these classes. For example, you can change RowwiseParallel to assume the input is replicated instead of sharded.
+## Parallelizing linear & attention modules
+
+First here are some amazing graphics from PyTorch Lightning that show how these parallelization strategies work:
 
 ### Colwise Linear
 
@@ -84,51 +91,65 @@ Clever use of colwise & rowwise together means we can actually chain these techn
 
 Image Source: [PyTorchLightning](https://lightning.ai/lightning-ai/studios/tensor-parallelism-supercharging-large-model-training-with-pytorch-lightning#combined-parallel-layers)
 
-### Parallelizing Embedding with RowwiseParallel
 
-The embeddings weight get's sharded along dimension 0. For those who know how embedding layers work, the 0th dimension of the weight matrix is usually the vocab dimension. Meaning when you execute an embedding layer, it is normally an index into the matrix. How does this work when we shard that?
+### Code to parallelizing the Llama Decoder Layer
 
-For example, let's say we have vocab size of 100, and we are doing rowwise across 2 GPUs. Then GPU 0 will have indices 0-49, and GPU 2 will have indices 50-99. What happens on both GPUs when we have the input tensor [20, 70]?
+```
+for layer in model.model.layers:
+    # Have the adjust these values since we are sharding the linear layers
+    layer.self_attn.num_heads //= mesh["tp"].size()
+    layer.self_attn.num_key_value_heads //= mesh["tp"].size()
 
-TODO
+    tp.parallelize_module(
+        layer,
+        mesh["tp"],
+        {
+            "self_attn.q_proj": tp.ColwiseParallel(),
+            "self_attn.k_proj": tp.ColwiseParallel(),
+            "self_attn.v_proj": tp.ColwiseParallel(),
+            "self_attn.o_proj": tp.RowwiseParallel(),
 
-### Parallelizing Norm Layers with SequenceParallel
+            "mlp.gate_proj": tp.ColwiseParallel(),
+            "mlp.up_proj": tp.ColwiseParallel(),
+            "mlp.down_proj": tp.RowwiseParallel(),
+        },
+    )
+```
+
+### Parallelizing Embedding layer
+
+The embeddings weight get's sharded along dimension 1. Meaning each GPU holds a different slice of the data associated with each token.
+
+```python
+tp.parallelize_module(
+    model,
+    mesh["tp"],
+    {"model.embed_tokens": tp.ColwiseParallel()},
+)
+```
+
+### Parallelizing the final linear layer of the model
+
+```
+tp.parallelize_module(
+    model,
+    mesh["tp"],
+    {
+        "lm_head": tp.ColwiseParallel(
+            output_layouts=Replicate(),
+            use_local_output=True,
+        ),
+    },
+)
+```
+
+## Parallelizing Norm Layers with SequenceParallel
 
 For normalization layers, it works a bit differently. We don't actually shard the layer's weights at all, instead we do store copies of them one very GPU. Instead, we shard the **input** for this on the sequence dimension!
 
-## Code Changes
+TODO
 
-### Grouping GPUs with Device Mesh
-
-First we are going to create our device mesh. This doesn't do anything on its own, but we will be passing this object to other APIs.
-
-```python
-gpus_on_node = torch.cuda.device_count()
-num_nodes = world_size // gpus_on_node
-mesh = dist.device_mesh.init_device_mesh(
-    "cuda",
-    (num_nodes, gpus_on_node),
-    mesh_dim_names=("dp", "tp"),
-)
-```
-
-### All GPUs on a node must have Identical inputs!!!
-
-Again, we are now treating the node as the indivisible "unit", so all GPUs on a node must be working on the same input.
-
-We achieve this by setting the DistributedSampler's rank/world_size explicitly:
-
-```python
-sampler=DistributedSampler(
-    ...,
-    num_replicas=mesh["dp"].size(),
-    rank=mesh["dp"].get_local_rank(),
-)
-```
-
-Our new world size is size of the data parallel mesh, and our new rank is our processes rank in the data parallel mesh. Note that all of our processes on the same node will have the same data parallel rank, and this is what we want!
-
-### Transformers Llama implementation extra changes
+## Transformers implementation extra changes
 
 This is very specific to the llama implementation in transformers, but we need to add some additionally input to our model to make this all work properly (otherwise the llama implementation will get some of the sequence dimensions incorrect):
 
@@ -141,7 +162,7 @@ This is very specific to the llama implementation in transformers, but we need t
 +    ).unsqueeze(0)
 ```
 
-### Computing throughput with our new world size
+## Computing throughput with our new world size
 
 Because each of our GPUs is now no longer the unit, we just need to update our throughput calculation to use our device mesh:
 
@@ -152,177 +173,7 @@ Because each of our GPUs is now no longer the unit, we just need to update our t
      ms_per_step = sum(t.avg_elapsed_ms() for t in timers.values())
 ```
 
-### Applying tensor parallelism to our model
-
-<details>
-    <summary>For reference, here is the architecture for 405B:</summary>
-
-    LlamaForCausalLM(
-        (model): LlamaModel(
-            (embed_tokens): Embedding(128256, 16384)
-            (layers): ModuleList(
-                (0-125): 126 x LlamaDecoderLayer(
-                    (self_attn): LlamaSdpaAttention(
-                        (q_proj): Linear(in_features=16384, out_features=16384, bias=False)
-                        (k_proj): Linear(in_features=16384, out_features=1024, bias=False)
-                        (v_proj): Linear(in_features=16384, out_features=1024, bias=False)
-                        (o_proj): Linear(in_features=16384, out_features=16384, bias=False)
-                        (rotary_emb): LlamaRotaryEmbedding()
-                    )
-                    (mlp): LlamaMLP(
-                        (gate_proj): Linear(in_features=16384, out_features=53248, bias=False)
-                        (up_proj): Linear(in_features=16384, out_features=53248, bias=False)
-                        (down_proj): Linear(in_features=53248, out_features=16384, bias=False)
-                        (act_fn): SiLU()
-                    )
-                    (input_layernorm): LlamaRMSNorm((16384,), eps=1e-05)
-                    (post_attention_layernorm): LlamaRMSNorm((16384,), eps=1e-05)
-                )
-            )
-            (norm): LlamaRMSNorm((16384,), eps=1e-05)
-            (rotary_emb): LlamaRotaryEmbedding()
-        )
-        (lm_head): Linear(in_features=16384, out_features=128256, bias=False)
-    )
-</details>
-
-#### Embedding layer
-
-Our model starts off with the embedding layer so we start there:
-
-```python
-tp.parallelize_module(
-    model,
-    mesh["tp"],
-    {
-        "model.embed_tokens": tp.RowwiseParallel(
-            input_layouts=Replicate(),
-            output_layouts=Shard(1),
-        ),
-    },
-)
-```
-
-Here we are telling pytorch to parallelize the embed_tokens layer in rowwise fashion [(See our section above for how this works)](#parallelizing-embedding-with-rowwiseparallel). Here we specify that the inputs that this layer receives are replicated across all of our gpus (due to our changes to [DistributedSampler above](#all-gpus-on-a-node-must-have-identical-inputs)). We also specify that the outputs of this will have dimension 1 sharded, which is not the default behavior. We do this to optimize a bit, because the first layer in our decoder layer is a sequence parallel layer, which will need the input sharded on dimension 1. So we are saving a bit of computation from this.
-
-#### Decoder layers
-
-Next we start parallelizing the decoder layers:
-
-```python
-for layer in model.model.layers:
-    # Have the adjust these values since we are sharding the linear layers
-    layer.self_attn.num_heads //= mesh["tp"].size()
-    layer.self_attn.num_key_value_heads //= mesh["tp"].size()
-
-    tp.parallelize_module(
-        layer,
-        mesh["tp"],
-        {
-            # SequenceParallel will apply sharding to sequence dimension.
-            "input_layernorm": tp.SequenceParallel(),
-            # The input to self_attn (which is the output from the SequenceParallel input_layer_norm) will be sharded on dimension 1, but we wanted it to be the whole tensor.
-            "self_attn": tp.PrepareModuleInput(
-                input_kwarg_layouts={
-                    "hidden_states": Shard(dim=1),
-                },
-                desired_input_kwarg_layouts={"hidden_states": Replicate()},
-            ),
-            "self_attn.q_proj": tp.ColwiseParallel(),
-            "self_attn.k_proj": tp.ColwiseParallel(),
-            "self_attn.v_proj": tp.ColwiseParallel(),
-            "self_attn.o_proj": tp.RowwiseParallel(output_layouts=Shard(1)),
-            # Another sharding along sequence dimension.
-            "post_attention_layernorm": tp.SequenceParallel(),
-            "mlp": tp.PrepareModuleInput(
-                input_layouts=Shard(dim=1), desired_input_layouts=Replicate()
-            ),
-            "mlp.gate_proj": tp.ColwiseParallel(),
-            "mlp.up_proj": tp.ColwiseParallel(),
-            "mlp.down_proj": tp.RowwiseParallel(output_layouts=Shard(1)),
-        },
-    )
-```
-
-First we need to adjust some local variables that the decoder layers have for computing attention:
-
-```python
-layer.self_attn.num_heads //= mesh["tp"].size()
-layer.self_attn.num_key_value_heads //= mesh["tp"].size()
-```
-
-Then we have the first sequence parallel usage on our first input_layernorm:
-
-```python
-# SequenceParallel will apply sharding to sequence dimension.
-"input_layernorm": tp.SequenceParallel(),
-# The input to self_attn (which is the output from the SequenceParallel input_layer_norm) will be sharded on dimension 1, but we wanted it to be the whole tensor.
-"self_attn": tp.PrepareModuleInput(
-    input_kwarg_layouts={
-        "hidden_states": Shard(dim=1),
-    },
-    desired_input_kwarg_layouts={"hidden_states": Replicate()},
-),
-```
-
-I'm including the prepare module input here because we need that from using the sequence parallel. Remember, sequence parallel shards the input across the sequence dimension, but all of our other tensor parallel approaches require replicated input.
-
-So from the above configuration, when we pass the output from `input_layernorm` into `self_attn`, we will transform the `hidden_states` variable from a sharded tensor to a replicated tensor.
-
-Next we have our self attention block:
-
-```python
-"self_attn.q_proj": tp.ColwiseParallel(),
-"self_attn.k_proj": tp.ColwiseParallel(),
-"self_attn.v_proj": tp.ColwiseParallel(),
-"self_attn.o_proj": tp.RowwiseParallel(output_layouts=Shard(1)),
-```
-
-Here we are sharding all of our q, k, and v matrices using [colwise parallel](#colwise-linear). Because we adjusted our num_heads/num_key_value_heads in the loop, our attention implementation will just work with the smaller matrices. Finally, because we can [chain linears](#chaining-colwise--rowwise-linears), we can set up the final output linear layer as a [rowise linear](#rowwise-linear). Similar to our embedding layer, we specify the output as sharded on dimension 1 to optimize the input for the next sequence parallel layer:
-
-```python
-"post_attention_layernorm": tp.SequenceParallel(),
-"mlp": tp.PrepareModuleInput(
-    input_layouts=Shard(dim=1), desired_input_layouts=Replicate()
-),
-```
-
-This is pretty much identical to the first sequence parallel block we had.
-
-Our final piece of parallelization is the MLP block which works very similarly to our self attention:
-
-```python
-"mlp.gate_proj": tp.ColwiseParallel(),
-"mlp.up_proj": tp.ColwiseParallel(),
-"mlp.down_proj": tp.RowwiseParallel(output_layouts=Shard(1)),
-```
-
-Again see the visualization of [chained linears](#chaining-colwise--rowwise-linears) for how this works.
-
-### Vocab output layer
-
-Our final layer in the model is a remaining `SequenceParallel` layer followed by a `Linear` layer.
-
-```python
-tp.parallelize_module(
-    model,
-    mesh["tp"],
-    {
-        "model.norm": tp.SequenceParallel(),
-        "lm_head": tp.ColwiseParallel(
-            input_layouts=Shard(1),
-            output_layouts=Replicate(),
-            use_local_output=True,
-        ),
-    },
-)
-```
-
-Here we don't need a `PrepareModuleInput` after the `SequenceParallel` because we just have 1 module that uses the input. So we specify the `input_layouts` of the colwise parallel as `Shard(1)`.
-
-We also need to `use_local_output=True` so our loss calculation works properly.
-
-## Throughput
+## Results
 
 Here are some results from launching on a single node of 8x H100s:
 
@@ -335,3 +186,30 @@ HF_HOME=/home/ubuntu/.cache/huggingface OMP_NUM_THREADS=26 torchrun --standalone
 
 TODO put graph of loss decreasing & throughput?
 
+
+## Useful References
+
+For completeness here are the relevant docs/guides from pytorch on how to achieve this:
+- [TP API docs](https://pytorch.org/docs/stable/distributed.tensor.parallel.html#tensor-parallelism-torch-distributed-tensor-parallel)
+- [2d Parallelism Tutorial](https://pytorch.org/tutorials/intermediate/TP_tutorial.html#large-scale-transformer-model-training-with-tensor-parallel-tp)
+- [Device Mesh tutorial](https://pytorch.org/tutorials/recipes/distributed_device_mesh.html)
+- [PyTorch Lightning TP Tutorial](https://lightning.ai/lightning-ai/studios/tensor-parallelism-supercharging-large-model-training-with-pytorch-lightning)
+
+## Pytorch API Reference
+
+Here we are going to give a brief explanation of how the api we are going to be using works.
+
+- [tp.RowwiseParallel()](https://pytorch.org/docs/stable/distributed.tensor.parallel.html#torch.distributed.tensor.parallel.RowwiseParallel) shards the module's weights in a row wise fashion.
+    - Inputs by default are sharded on last dimension
+    - Outputs by default are replicated on all workers
+- [tp.ColwiseParallel()](https://pytorch.org/docs/stable/distributed.tensor.parallel.html#torch.distributed.tensor.parallel.ColwiseParallel) shards the module's weights in a col wise fashion.
+    - Inputs by default are replicated on all workers
+    - Outputs by default are sharded on last dimension
+- [tp.SequenceParallel()](https://pytorch.org/docs/stable/distributed.tensor.parallel.html#torch.distributed.tensor.parallel.SequenceParallel) shards the input/output across dimension 1. Module weights are NOT sharded.
+- [tp.PrepareModuleInput()](https://pytorch.org/docs/stable/distributed.tensor.parallel.html#torch.distributed.tensor.parallel.PrepareModuleInput) let's you change the sharding configuration of input tensors
+- `torch.distributed._tensor.Shard(dim=X)` indicates a tensor should be sharded along dimension X
+- `torch.distributed._tensor.Replicate()` indicates a tensor should be replicated among all workers.
+
+How all of these things interact is actually very subtle and complex, which is why this guide is useful!
+
+You can also change most of the default behavior with arguments to these classes. For example, you can change RowwiseParallel to assume the input is replicated instead of sharded.
