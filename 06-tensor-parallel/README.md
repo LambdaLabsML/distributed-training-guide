@@ -175,16 +175,12 @@ Because each of our GPUs is now no longer the unit, we just need to update our t
 
 ## Results
 
-Here are some results from launching on a single node of 8x H100s:
+Here are some results from launching training for llama 8B on a single node of 8x H100s:
 
 Command:
 ```bash
-HF_HOME=/home/ubuntu/.cache/huggingface OMP_NUM_THREADS=26 torchrun --standalone --nproc-per-node gpu train_llm.py --experiment-name tp-llama-8b --dataset-name tatsu-lab/alpaca --model-name meta-llama/Llama-3.1-8B --log-freq 10 --batch-size 19 --seq-length 1024
+HF_HOME=/home/ubuntu/.cache/huggingface OMP_NUM_THREADS=26 torchrun --standalone --nproc-per-node gpu train_llm.py --experiment-name tp-llama-8b --dataset-name tatsu-lab/alpaca --model-name meta-llama/Llama-3.1-8B --log-freq 10 --batch-size 16 --seq-length 1024
 ```
-
-15k tok/s
-
-TODO put graph of loss decreasing & throughput?
 
 
 ## Useful References
