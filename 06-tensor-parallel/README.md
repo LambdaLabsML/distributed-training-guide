@@ -94,6 +94,8 @@ Image Source: [PyTorchLightning](https://lightning.ai/lightning-ai/studios/tenso
 
 ### Code to parallelizing the Llama Decoder Layer
 
+The cool thing about this is that the actual matmuls and flash attention that occur on each device will use smaller matrix sizes!
+
 ```
 for layer in model.model.layers:
     # Have the adjust these values since we are sharding the linear layers
@@ -120,11 +122,15 @@ for layer in model.model.layers:
 
 The embeddings weight get's sharded along dimension 1. Meaning each GPU holds a different slice of the data associated with each token.
 
+When we run this module, it receives a 2d input of size `(batch, seq)`. The output will contain `(batch, seq, model_dim / num_shards)`.
+
+We then need to shard along the sequence dimension, so including the `output_layouts=Shard(1)` means the final output will be `(batch, seq / num_shards, model_dim)`.
+
 ```python
 tp.parallelize_module(
     model,
     mesh["tp"],
-    {"model.embed_tokens": tp.ColwiseParallel()},
+    {"model.embed_tokens": tp.ColwiseParallel(output_layouts=Shard(1))},
 )
 ```
 
