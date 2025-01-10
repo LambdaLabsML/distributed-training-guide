@@ -179,9 +179,12 @@ Here are some results from launching training for llama 8B on a single node of 8
 
 Command:
 ```bash
-HF_HOME=/home/ubuntu/.cache/huggingface OMP_NUM_THREADS=26 torchrun --standalone --nproc-per-node gpu train_llm.py --experiment-name tp-llama-8b --dataset-name tatsu-lab/alpaca --model-name meta-llama/Llama-3.1-8B --log-freq 10 --batch-size 16 --seq-length 1024
+HF_HOME=/home/ubuntu/.cache/huggingface OMP_NUM_THREADS=26 torchrun --standalone --nproc-per-node gpu train_llm.py --experiment-name tp-llama-8b --dataset-name tatsu-lab/alpaca --model-name meta-llama/Llama-3.1-8B --log-freq 10 --batch-size 16 --seq-length 1024 --num-epochs 1
 ```
 
+![W B Chart 1_10_2025, 11_07_19 AM](https://github.com/user-attachments/assets/4bafada2-beea-4e37-a341-62d7f4639014)
+
+![W B Chart 1_10_2025, 11_07_04 AM](https://github.com/user-attachments/assets/c6e67666-db7c-4b67-bae4-98480382557f)
 
 ## Useful References
 
