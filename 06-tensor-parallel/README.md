@@ -15,7 +15,7 @@ TP splits the model weights **AND** computation across multiple GPUs.
 
 FSDP splits the model weights, but it gathers them back for the computation. Splitting the computation across GPUs is the difference.
 
-A <> of this is the world size is scaled **down** by your tensor parallel size => the cost of allgathers/allreduces is reduced. This becomes a big factor when your cluster is large, and TP is a very effective way to scale up!
+A result of this is the world size is scaled **down** by your tensor parallel size => the cost of allgathers/allreduces is reduced. This becomes a big factor when your cluster is large, and TP is a very effective way to scale up!
 
 Here are the benefits of this:
 1. The peak GPU memory is reduced - now instead of each GPU fully loading up the full weights for each layer, they now only load `1/num_gpus` of the weights.
