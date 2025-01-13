@@ -3,7 +3,7 @@
 So far we've just been using data parallel techniques. You may have heard of other parallelism techniques, and indeed the [Llama 405B paper](https://ai.meta.com/research/publications/the-llama-3-herd-of-models/) actually uses 4D parallelism when training the 405B model:
 
 1. Data parallel (FSDP as we've learned)
-2. Tensor parallel (this chapter)
+2. Tensor parallel (**this chapter**)
 3. Context parallel (For long context lengths)
 4. Pipeline/model parallel
 
@@ -11,17 +11,11 @@ In this chapter we are going to diving into what tensor parallelism is, before w
 
 ## Basics: What is tensor parallelism?
 
-TP splits the model weights & computation across multiple GPUs.
+TP splits the model weights **AND** computation across multiple GPUs.
 
-Sharded data parallel does split the model weights, but it gathers them back for the computation. The computation bit being split across GPUs is the difference.
+FSDP splits the model weights, but it gathers them back for the computation. Splitting the computation across GPUs is the difference.
 
-We will be treating an entire node of GPUs as the execution unit:
-1. The model is sharded across the GPUs on the node.
-2. Every *GPU* on the node receives **the same input**
-
-It reduces the world size by however many GPUs are in your node, meaning the cost of allgathers/allreduces is reduced. This becomes a big factor when your cluster is large.
-
-It's a very effective way to scale up!
+A <> of this is the world size is scaled **down** by your tensor parallel size => the cost of allgathers/allreduces is reduced. This becomes a big factor when your cluster is large, and TP is a very effective way to scale up!
 
 Here are the benefits of this:
 1. The peak GPU memory is reduced - now instead of each GPU fully loading up the full weights for each layer, they now only load `1/num_gpus` of the weights.
@@ -29,12 +23,14 @@ Here are the benefits of this:
 3. Less allgather/allreduce cost
 
 Here are the downsides:
-1. The global batch size is reduced
-2. BUT we can now hopefully increase the local batch size per node, since we are reducing peak GPU memory.
+1. Global batch size is reduced
+2. Increased code complexity
 
 Note that this can only really be applied to certain modules, but most of the modules in an LLM work with it.
 
 ## First: ensure all GPUs on a node get the same input
+
+Since we are splitting computation across GPUs, that means all the GPUs we are splitting over need to receive the same input. That is why the global batch size is reduced.
 
 First we are going to create our device mesh. This doesn't do anything on its own, but we will be passing this object to other APIs.
 
@@ -96,9 +92,9 @@ Image Source: [PyTorchLightning](https://lightning.ai/lightning-ai/studios/tenso
 
 The cool thing about this is that the actual matmuls and flash attention that occur on each device will use smaller matrix sizes!
 
-```
+```python
 for layer in model.model.layers:
-    # Have the adjust these values since we are sharding the linear layers
+    # Have the adjust these values for the transformers logic to work properly
     layer.self_attn.num_heads //= mesh["tp"].size()
     layer.self_attn.num_key_value_heads //= mesh["tp"].size()
 
@@ -136,24 +132,75 @@ tp.parallelize_module(
 
 ### Parallelizing the final linear layer of the model
 
-```
+```python
 tp.parallelize_module(
     model,
     mesh["tp"],
     {
         "lm_head": tp.ColwiseParallel(
-            output_layouts=Replicate(),
-            use_local_output=True,
+            output_layouts=Replicate()
         ),
     },
 )
 ```
 
+We have to include `Replicate()` here because by default colwise shards on the last dimension, but we need the output of the network to be replicated across our TP dimension.
+
 ## Parallelizing Norm Layers with SequenceParallel
 
 For normalization layers, it works a bit differently. We don't actually shard the layer's weights at all, instead we do store copies of them one very GPU. Instead, we shard the **input** for this on the sequence dimension!
 
-TODO
+So our computation is split, and we need to do some work to join the results back together for the other modules:
+
+```diff
+ for layer in model.model.layers:
+     # Have the adjust these values since we are sharding the linear layers
+     layer.self_attn.num_heads //= mesh["tp"].size()
+     layer.self_attn.num_key_value_heads //= mesh["tp"].size()
+ 
+     tp.parallelize_module(
+         layer,
+         mesh["tp"],
+         {
++            "input_layernorm": tp.SequenceParallel(),
++            "self_attn": tp.PrepareModuleInput(
++                input_kwarg_layouts={"hidden_states": Shard(dim=1)},
++                desired_input_kwarg_layouts={"hidden_states": Replicate()},
++            ),
+             "self_attn.q_proj": tp.ColwiseParallel(),
+             "self_attn.k_proj": tp.ColwiseParallel(),
+             "self_attn.v_proj": tp.ColwiseParallel(),
+-            "self_attn.o_proj": tp.RowwiseParallel(),
++            "self_attn.o_proj": tp.RowwiseParallel(output_layouts=Shard(1)),
++            "post_attention_layernorm": tp.SequenceParallel(),
++            "mlp": tp.PrepareModuleInput(
++                input_layouts=Shard(dim=1),
++                desired_input_layouts=Replicate(),
++            ),
+             "mlp.gate_proj": tp.ColwiseParallel(),
+             "mlp.up_proj": tp.ColwiseParallel(),
+-            "mlp.down_proj": tp.RowwiseParallel(),
++            "mlp.down_proj": tp.RowwiseParallel(output_layouts=Shard(1)),
+         },
+     )
+```
+
+The `PrepareModuleInput` objects transform how the tensors are split up. E.g. for `self_attn` the hidden_states input is sharded along the 1st dimension because of the `SequenceParallel`, but all the `ColwiseParallel` expect input to be replicated.
+
+And here is the diff for our final output from the network:
+```diff
+ tp.parallelize_module(
+     model,
+     mesh["tp"],
+     {
++        "model.norm": tp.SequenceParallel(),
+         "lm_head": tp.ColwiseParallel(
++            input_layouts=Shard(1),
+             output_layouts=Replicate(),
+         ),
+     },
+ )
+```
 
 ## Transformers implementation extra changes
 

@@ -100,9 +100,7 @@ def main():
                 "input_layernorm": tp.SequenceParallel(),
                 # The input to self_attn (which is the output from the SequenceParallel input_layer_norm) will be sharded on dimension 1, but we wanted it to be the whole tensor.
                 "self_attn": tp.PrepareModuleInput(
-                    input_kwarg_layouts={
-                        "hidden_states": Shard(dim=1),
-                    },
+                    input_kwarg_layouts={"hidden_states": Shard(dim=1)},
                     desired_input_kwarg_layouts={"hidden_states": Replicate()},
                 ),
                 "self_attn.q_proj": tp.ColwiseParallel(),
@@ -112,7 +110,8 @@ def main():
                 # Another sharding along sequence dimension.
                 "post_attention_layernorm": tp.SequenceParallel(),
                 "mlp": tp.PrepareModuleInput(
-                    input_layouts=Shard(dim=1), desired_input_layouts=Replicate()
+                    input_layouts=Shard(dim=1),
+                    desired_input_layouts=Replicate(),
                 ),
                 "mlp.gate_proj": tp.ColwiseParallel(),
                 "mlp.up_proj": tp.ColwiseParallel(),
@@ -128,7 +127,6 @@ def main():
             "lm_head": tp.ColwiseParallel(
                 input_layouts=Shard(1),
                 output_layouts=Replicate(),
-                use_local_output=True,
             ),
         },
     )
