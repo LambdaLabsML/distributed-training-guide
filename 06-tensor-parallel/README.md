@@ -66,7 +66,7 @@ First here are some amazing graphics from PyTorch Lightning that show how these 
 
 Shards the weight and bias of a Linear layer along dimension 0.
 
-![image](https://storage.googleapis.com/lightning-avatars/litpages/01hyz8vg94nc6nk7t10rt8jpt1/a2fe38f3-4a73-4b0f-80da-c273d14cadd9.jpeg)
+<image src="https://storage.googleapis.com/lightning-avatars/litpages/01hyz8vg94nc6nk7t10rt8jpt1/a2fe38f3-4a73-4b0f-80da-c273d14cadd9.jpeg" width="640px" />
 
 Image Source: [PyTorchLightning](https://lightning.ai/lightning-ai/studios/tensor-parallelism-supercharging-large-model-training-with-pytorch-lightning#column-wise-parallel)
 
@@ -74,7 +74,7 @@ Image Source: [PyTorchLightning](https://lightning.ai/lightning-ai/studios/tenso
 
 Shards the weight of a Linear layer along dimension 1, and replicates the bias layer.
 
-![image](https://storage.googleapis.com/lightning-avatars/litpages/01hyz8vg94nc6nk7t10rt8jpt1/6b715900-897d-4b3d-a1b6-8ce48f213acf.jpeg)
+<image src="https://storage.googleapis.com/lightning-avatars/litpages/01hyz8vg94nc6nk7t10rt8jpt1/6b715900-897d-4b3d-a1b6-8ce48f213acf.jpeg" width="640px" />
 
 Image Source: [PyTorchLightning](https://lightning.ai/lightning-ai/studios/tensor-parallelism-supercharging-large-model-training-with-pytorch-lightning#row-wise-parallel)
 
@@ -83,7 +83,7 @@ Image Source: [PyTorchLightning](https://lightning.ai/lightning-ai/studios/tenso
 
 Clever use of colwise & rowwise together means we can actually chain these techniques together:
 
-![image](https://storage.googleapis.com/lightning-avatars/litpages/01hyz8vg94nc6nk7t10rt8jpt1/a1bc6e8a-7146-44c6-b6cf-eec124cfbf74.jpeg)
+<image src="https://storage.googleapis.com/lightning-avatars/litpages/01hyz8vg94nc6nk7t10rt8jpt1/a1bc6e8a-7146-44c6-b6cf-eec124cfbf74.jpeg" width="640px" />
 
 Image Source: [PyTorchLightning](https://lightning.ai/lightning-ai/studios/tensor-parallelism-supercharging-large-model-training-with-pytorch-lightning#combined-parallel-layers)
 
@@ -235,9 +235,9 @@ Command:
 HF_HOME=/home/ubuntu/.cache/huggingface OMP_NUM_THREADS=26 torchrun --standalone --nproc-per-node gpu train_llm.py --experiment-name tp-llama-8b --dataset-name tatsu-lab/alpaca --model-name meta-llama/Llama-3.1-8B --log-freq 10 --batch-size 16 --seq-length 1024 --num-epochs 1
 ```
 
-![W B Chart 1_10_2025, 11_07_19 AM](https://github.com/user-attachments/assets/4bafada2-beea-4e37-a341-62d7f4639014)
+<img src="https://github.com/user-attachments/assets/4bafada2-beea-4e37-a341-62d7f4639014" width="480px" />
 
-![W B Chart 1_10_2025, 11_07_04 AM](https://github.com/user-attachments/assets/c6e67666-db7c-4b67-bae4-98480382557f)
+<img src="https://github.com/user-attachments/assets/c6e67666-db7c-4b67-bae4-98480382557f" width="480px" />
 
 ## Useful References
 
