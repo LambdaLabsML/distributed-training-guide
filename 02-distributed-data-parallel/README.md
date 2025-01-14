@@ -33,6 +33,7 @@ Quick jump:
         - [Interacting with file system on rank 0 only](#only-creating-experiment-directory-on-rank-0)
         - [wandb on rank 0 only](#wandb-runs-on-rank-0)
         - [Checkpoints from rank 0 only](#save-checkpoint-on-rank-0)
+- [Optimizing memory - Zero Redundancy](#optimizing-memory---zero-redundancy-optimizer)
 - [How multi node works](#how-multi-node-works)
 - [Shared storage - Managing your python virtual environment across nodes](#shared-storage---managing-your-python-virtual-environment-across-nodes)
 - [Shared storage - Mangaging your dataset/model checkpoints across nodes](#shared-storage---mangaging-your-datasetmodel-checkpoints-across-nodes)
@@ -334,6 +335,21 @@ We only want one of our ranks to save a checkpoint. Otherwise the ranks might wr
               json.dump(state, fp)
 +    dist.barrier()
 ```
+
+## Optimizing memory - Zero Redundancy Optimizer
+
+DDP stores the entire model and optimizer on every single GPU. This is especially wasteful regarding the optimizer. Thankfully we have [ZeRO: Memory Optimizations Toward Training Trillion Parameter Models](https://arxiv.org/abs/1910.02054) which we can easily add to reduce memory usage:
+
+```diff
++ from torch.distributed.optim import ZeroRedundancyOptimizer
+
+-optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr)
++optimizer = ZeroRedundancyOptimizer(
++    model.parameters(), optimizer_class=torch.optim.AdamW, lr=args.lr
++)
+```
+
+Unfortunately the code to save a state dict for ZeRO is exorbitantly slow, so we also have to remove saving the optimizer state dicts.
 
 ## How multi node works
 
