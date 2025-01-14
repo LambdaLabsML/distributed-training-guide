@@ -1,5 +1,6 @@
 wandb==0.17.5
-torch==2.4.0
+torch==2.5.1
 tqdm==4.66.4
 datasets==2.20.0
 transformers==4.44.2
+flash-attn==2.7.3
