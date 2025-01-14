@@ -251,11 +251,11 @@ def get_mem_stats(device=None):
     mem = torch.cuda.memory_stats(device)
     props = torch.cuda.get_device_properties(device)
     return {
-        "total_mem_in_gb": 1e-9 * props.total_memory,
-        "curr_alloc_in_gb": 1e-9 * mem["allocated_bytes.all.current"],
-        "peak_alloc_in_gb": 1e-9 * mem["allocated_bytes.all.peak"],
-        "curr_resv_in_gb": 1e-9 * mem["reserved_bytes.all.current"],
-        "peak_resv_in_gb": 1e-9 * mem["reserved_bytes.all.peak"],
+        "total_gb": 1e-9 * props.total_memory,
+        "curr_alloc_gb": 1e-9 * mem["allocated_bytes.all.current"],
+        "peak_alloc_gb": 1e-9 * mem["allocated_bytes.all.peak"],
+        "curr_resv_gb": 1e-9 * mem["reserved_bytes.all.current"],
+        "peak_resv_gb": 1e-9 * mem["reserved_bytes.all.peak"],
     }
 
 
