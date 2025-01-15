@@ -47,3 +47,7 @@ Here are some training results for 4 different setups of the TP size:
 
 Note that all of these runs have the same `--lr` while having different batch sizes, which is why the loss curves are slightly different.
 
+<img src="https://github.com/user-attachments/assets/8645b7d2-992f-4f49-9214-f6c5d4d42c37" width="480px" />
+
+<img src="https://github.com/user-attachments/assets/1b9269ce-c1db-43e4-9fd7-0bbf11871b11" width="480px" />
+
