@@ -130,6 +130,18 @@ tp.parallelize_module(
 )
 ```
 
+Because of this, we need to pass `position_ids` in forward call. This is very specific to the llama implementation in transformers because it computes sequence length from the _output of `model.embed_tokens`_. Since we are now sharding that layer's output
+on the sequence dimension, the llama transformers code will get the wrong seq length. Passing this directly will let us control the sequence length.
+
+```diff
+ with timers["data"], torch.no_grad():
+     batch = next(batches)
+     batch = {k: v.to(device=device) for k, v in batch.items()}
++    batch["position_ids"] = torch.arange(
++        0, args.seq_length, device=device, dtype=torch.long
++    ).unsqueeze(0)
+```
+
 ### Parallelizing the final linear layer of the model
 
 ```python
@@ -202,18 +214,37 @@ And here is the diff for our final output from the network:
  )
 ```
 
-## Transformers implementation extra changes
+## Parallelizing Loss computation
 
-This is very specific to the llama implementation in transformers, but we need to add some additionally input to our model to make this all work properly (otherwise the llama implementation will get some of the sequence dimensions incorrect):
+There's an additional api for parallelizing the loss computation (only works for Cross Entropy at the moment of writing) across the **class** dimension. We first need to use this context manager around our loss computation:
+
+```python
+with tp.loss_parallel(), timers["forward"]:
+    outputs = model(**batch)
+
+with tp.loss_parallel(), timers["backward"]:
+    outputs.loss.backward()
+```
+
+Then we need to update the output of our `lm_head` for this also, because loss_parallel requires different sharding format and DTensor:
 
 ```diff
- with timers["data"], torch.no_grad():
-     batch = next(batches)
-     batch = {k: v.to(device=device) for k, v in batch.items()}
-+    batch["position_ids"] = torch.arange(
-+        0, args.seq_length, device=device, dtype=torch.long
-+    ).unsqueeze(0)
+ tp.parallelize_module(
+     model,
+     mesh["tp"],
+     {
+         "model.norm": tp.SequenceParallel(),
+         "lm_head": tp.ColwiseParallel(
+             input_layouts=Shard(1),
+-            output_layouts=Replicate(),
++            output_layouts=Shard(-1),
++            use_local_output=False,
+         ),
+     },
+ )
 ```
+
+`use_local_output=False` tells pytorch to return a `DTensor` from the operation, instead of a normal `Tensor`.
 
 ## Computing throughput with our new world size
 

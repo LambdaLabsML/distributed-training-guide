@@ -49,6 +49,7 @@ source venv/bin/activate
 python -m pip install -U pip
 pip install -U setuptools wheel
 pip install -r requirements.txt
+pip install flash-attn --no-build-isolation
 ```
 
 ### wandb

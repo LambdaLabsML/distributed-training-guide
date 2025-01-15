@@ -87,10 +87,6 @@ def main():
         {"model.embed_tokens": tp.ColwiseParallel(output_layouts=Shard(1))},
     )
     for layer in model.model.layers:
-        # Have the adjust these values since we are sharding the linear layers
-        layer.self_attn.num_heads //= mesh["tp"].size()
-        layer.self_attn.num_key_value_heads //= mesh["tp"].size()
-
         tp.parallelize_module(
             layer,
             mesh["tp"],
@@ -125,7 +121,8 @@ def main():
             "model.norm": tp.SequenceParallel(),
             "lm_head": tp.ColwiseParallel(
                 input_layouts=Shard(1),
-                output_layouts=Replicate(),
+                output_layouts=Shard(-1),  # for tp.loss_parallel
+                use_local_output=False,  # for tp.loss_parallel
             ),
         },
     )
@@ -239,11 +236,10 @@ def main():
                 # NOTE: for resuming
                 continue
 
-            # with tp.loss_parallel():
-            with timers["forward"]:
+            with tp.loss_parallel(), timers["forward"]:
                 outputs = model(**batch)
 
-            with timers["backward"]:
+            with tp.loss_parallel(), timers["backward"]:
                 outputs.loss.backward()
 
             with timers["update"]:
