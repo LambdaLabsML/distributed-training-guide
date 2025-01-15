@@ -94,10 +94,6 @@ The cool thing about this is that the actual matmuls and flash attention that oc
 
 ```python
 for layer in model.model.layers:
-    # Have the adjust these values for the transformers logic to work properly
-    layer.self_attn.num_heads //= mesh["tp"].size()
-    layer.self_attn.num_key_value_heads //= mesh["tp"].size()
-
     tp.parallelize_module(
         layer,
         mesh["tp"],
@@ -166,10 +162,6 @@ So our computation is split, and we need to do some work to join the results bac
 
 ```diff
  for layer in model.model.layers:
-     # Have the adjust these values since we are sharding the linear layers
-     layer.self_attn.num_heads //= mesh["tp"].size()
-     layer.self_attn.num_key_value_heads //= mesh["tp"].size()
- 
      tp.parallelize_module(
          layer,
          mesh["tp"],
