@@ -83,37 +83,7 @@ Because our DP dimension is size of 2, and our first table above actually shows 
 
 ## Parallelizing linear & attention modules
 
-First here are some amazing graphics from PyTorch Lightning that show how these parallelization strategies work:
-
-### Colwise Linear
-
-Shards the weight and bias of a Linear layer along dimension 0.
-
-<image src="https://storage.googleapis.com/lightning-avatars/litpages/01hyz8vg94nc6nk7t10rt8jpt1/a2fe38f3-4a73-4b0f-80da-c273d14cadd9.jpeg" width="640px" />
-
-Image Source: [PyTorchLightning](https://lightning.ai/lightning-ai/studios/tensor-parallelism-supercharging-large-model-training-with-pytorch-lightning#column-wise-parallel)
-
-### Rowwise Linear
-
-Shards the weight of a Linear layer along dimension 1, and replicates the bias layer.
-
-<image src="https://storage.googleapis.com/lightning-avatars/litpages/01hyz8vg94nc6nk7t10rt8jpt1/6b715900-897d-4b3d-a1b6-8ce48f213acf.jpeg" width="640px" />
-
-Image Source: [PyTorchLightning](https://lightning.ai/lightning-ai/studios/tensor-parallelism-supercharging-large-model-training-with-pytorch-lightning#row-wise-parallel)
-
-
-### Chaining colwise & rowwise Linears
-
-Clever use of colwise & rowwise together means we can actually chain these techniques together:
-
-<image src="https://storage.googleapis.com/lightning-avatars/litpages/01hyz8vg94nc6nk7t10rt8jpt1/a1bc6e8a-7146-44c6-b6cf-eec124cfbf74.jpeg" width="640px" />
-
-Image Source: [PyTorchLightning](https://lightning.ai/lightning-ai/studios/tensor-parallelism-supercharging-large-model-training-with-pytorch-lightning#combined-parallel-layers)
-
-
-### Code to parallelizing the Llama Decoder Layer
-
-The cool thing about this is that the actual matmuls and flash attention that occur on each device will use smaller matrix sizes!
+Here's the code first and then there are graphics after this that explain how this works. Note that we are passing our `mesh["tp"]` to the API, which means this is happening across our tensor parallel group!
 
 ```python
 for layer in model.model.layers:
@@ -132,6 +102,24 @@ for layer in model.model.layers:
         },
     )
 ```
+
+### colwise
+
+Our first three linear layers in self attention (q/k/v projection) are all colwise linear. This means we are sharding the weight matrix inside along dimension 0 (since it's stored in a transposed format). The remainder of the attention layer (including self attention), uses this sharded output to run (so attention actually will run on smaller tensors).
+
+<image src="https://storage.googleapis.com/lightning-avatars/litpages/01hyz8vg94nc6nk7t10rt8jpt1/a2fe38f3-4a73-4b0f-80da-c273d14cadd9.jpeg" width="640px" />
+
+Image Source: [PyTorchLightning](https://lightning.ai/lightning-ai/studios/tensor-parallelism-supercharging-large-model-training-with-pytorch-lightning#column-wise-parallel)
+
+### colwise into rowwise
+
+Our final layer in our self attention layer is another linear layer (o_proj). Note that we are doing rowwise parallel here. This actually let's us "recombine" across our tp dimension, as shown here:
+
+<image src="https://storage.googleapis.com/lightning-avatars/litpages/01hyz8vg94nc6nk7t10rt8jpt1/a1bc6e8a-7146-44c6-b6cf-eec124cfbf74.jpeg" width="640px" />
+
+Image Source: [PyTorchLightning](https://lightning.ai/lightning-ai/studios/tensor-parallelism-supercharging-large-model-training-with-pytorch-lightning#combined-parallel-layers)
+
+So the final output of self attention will be replicated again.
 
 ### Parallelizing Embedding layer
 
