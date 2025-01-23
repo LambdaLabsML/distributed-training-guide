@@ -30,7 +30,7 @@ Note that this can only really be applied to certain modules, but most of the mo
 
 ## Ensure all GPUs on a node get the same input
 
-Since we are splitting computation across GPUs, that means all the GPUs we are splitting over need to receive the same input. That is why the global batch size is reduced.
+Since we are splitting computation across GPUs, all GPUs in the same group need to receive the same input. (That is why the global batch size is reduced).
 
 First we are going to create our device mesh. A device mesh is just a way to view your devices in an N-dimensional way. So if you have 8 GPUs, you could organize it into a device mesh like `(2, 2, 2)`, or `(2, 4)`, or `(4, 2)` or even things like `(1, 8)`.
 
@@ -56,6 +56,7 @@ So if we have 4 GPUs total, and have a `(2, 2)` device mesh, here are the assign
 | GPU 3 | 1 | 1 |
 
 This doesn't actually mean anything unless we update the rest of our code to use these device meshes, so let's see how we do that!
+A lot of the pytorch distributed APIs actually take an optional `mesh: Optional[DeviceMesh] = None` argument, we just haven't used it so far.
 
 The first place is actually our data sampler, and this is how we get all of our GPUs in the tensor parallel group the same input:
 
@@ -134,30 +135,29 @@ for layer in model.model.layers:
 
 ### Parallelizing Embedding layer
 
-The embeddings weight get's sharded along dimension 1. Meaning each GPU holds a different slice of the data associated with each token.
+The embeddings weight get's sharded along dimension 1. Meaning each GPU holds a different slice of the data associated with each token:
 
-When we run this module, it receives a 2d input of size `(batch, seq)`. The output will contain `(batch, seq, model_dim / num_shards)`.
+| Embedding Weight Shape | Sharded Shape |
+| --- | --- |
+| (vocab_size, hidden_dim) | (vocab_size, hidden_dim / mesh["tp"].size()) |
 
-We then need to shard along the sequence dimension, so including the `output_layouts=Shard(1)` means the final output will be `(batch, seq / num_shards, model_dim)`.
+In a normal embedding layer it:
+- Input tokens of `shape=(batch, seq), dtype=torch.long`
+- Outputs embeddings of `shape=(batch, seq, hidden_dim), dtype=torch.bfloat16`
+
+Now that we've sharded it it will actually output:
+- Sharded output embeddings of `shape=(batch, seq, hidden_dim / mesh["tp"].size())`.
+
+We have a problem though: Our `self_attn` module will first receive the output of this embedding, and we used ColwiseParallel on that. ColwiseParallel actually expects input to be **replicated** not shared.
+
+So we need to transform the tensor to `shape=(batch, seq, hidden_dim)`. Luckily we can just specify this additional transformation with the `output_layouts` argument:
 
 ```python
 tp.parallelize_module(
     model,
     mesh["tp"],
-    {"model.embed_tokens": tp.ColwiseParallel(output_layouts=Shard(1))},
+    {"model.embed_tokens": tp.ColwiseParallel(output_layouts=Replicate())},
 )
-```
-
-Because of this, we need to pass `position_ids` in forward call. This is very specific to the llama implementation in transformers because it computes sequence length from the _output of `model.embed_tokens`_. Since we are now sharding that layer's output
-on the sequence dimension, the llama transformers code will get the wrong seq length. Passing this directly will let us control the sequence length.
-
-```diff
- with timers["data"], torch.no_grad():
-     batch = next(batches)
-     batch = {k: v.to(device=device) for k, v in batch.items()}
-+    batch["position_ids"] = torch.arange(
-+        0, args.seq_length, device=device, dtype=torch.long
-+    ).unsqueeze(0)
 ```
 
 ### Parallelizing the final linear layer of the model
@@ -178,7 +178,7 @@ We have to include `Replicate()` here because by default colwise shards on the l
 
 ## Parallelizing Norm Layers with SequenceParallel
 
-For normalization layers, it works a bit differently. We don't actually shard the layer's weights at all, instead we do store copies of them one very GPU. Instead, we shard the **input** for this on the sequence dimension!
+For normalization layers, it works a bit differently. We don't actually shard the layer's weights at all, instead, we shard the **input** for this on the sequence dimension!
 
 So our computation is split, and we need to do some work to join the results back together for the other modules:
 
@@ -212,6 +212,28 @@ So our computation is split, and we need to do some work to join the results bac
 ```
 
 The `PrepareModuleInput` objects transform how the tensors are split up. E.g. for `self_attn` the hidden_states input is sharded along the 1st dimension because of the `SequenceParallel`, but all the `ColwiseParallel` expect input to be replicated.
+
+We also need to change our embedding layer, since now the output of that is going into our SequenceParallel layer, we need to shard it along dimension 1:
+
+```diff
+ tp.parallelize_module(
+     model,
+     mesh["tp"],
+-    {"model.embed_tokens": tp.ColwiseParallel(output_layouts=Replicate())},
++    {"model.embed_tokens": tp.ColwiseParallel(output_layouts=Shard(1))},
+ )
+```
+
+We actually need an additional change because of this, due to `transformers` specific code. It computes the sequence length based on the output of the embedding layer, which will be wrong since we are now sharding it along the sequence dimension. Passing position_ids explicitly will fix this, but **its very implementation specific**:
+
+```diff
+ with timers["data"], torch.no_grad():
+     batch = next(batches)
+     batch = {k: v.to(device=device) for k, v in batch.items()}
++    batch["position_ids"] = torch.arange(
++        0, args.seq_length, device=device, dtype=torch.long
++    ).unsqueeze(0)
+```
 
 And here is the diff for our final output from the network:
 ```diff
