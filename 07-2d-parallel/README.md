@@ -6,7 +6,7 @@ Using both [FSDP](../04-fully-sharded-data-parallel) and [TP](../06-tensor-paral
 
 What does using these two together mean exactly? Let's get into an example with 6 GPUs, 2 way FSDP and 3 way TP:
 
-<img width="941" alt="image" src="https://github.com/user-attachments/assets/4c171de9-6a41-4bae-9278-6abe81ee5c84" />
+<img width="933" alt="image" src="https://github.com/user-attachments/assets/74c2edd4-505d-4c2b-a543-1d8a1c7efd2b" />
 
 When we first start out every gpu holds the full model. Then we shard the model into 3 pieces (our TP dimension). Note that GPU 0 and GPU 3 **have the exact same shard**! This is because they are the same tensor parallel rank, but are different data parallel ranks. This means we have **duplicated** our model across our data parallel dimension.
 
