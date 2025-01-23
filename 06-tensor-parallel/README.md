@@ -28,11 +28,13 @@ Here are the downsides:
 
 Note that this can only really be applied to certain modules, but most of the modules in an LLM work with it.
 
-## First: ensure all GPUs on a node get the same input
+## Ensure all GPUs on a node get the same input
 
 Since we are splitting computation across GPUs, that means all the GPUs we are splitting over need to receive the same input. That is why the global batch size is reduced.
 
-First we are going to create our device mesh. This doesn't do anything on its own, but we will be passing this object to other APIs.
+First we are going to create our device mesh. A device mesh is just a way to view your devices in an N-dimensional way. So if you have 8 GPUs, you could organize it into a device mesh like `(2, 2, 2)`, or `(2, 4)`, or `(4, 2)` or even things like `(1, 8)`.
+
+The reason this is helpful is because we are going to name these dimensions, much like we do with tensor dimensions. Similar to how we have a batch and sequence dimension, for our device mesh we are going to have a data parallel and tensor parallel dimension.
 
 ```python
 gpus_on_node = torch.cuda.device_count()
@@ -44,7 +46,18 @@ mesh = dist.device_mesh.init_device_mesh(
 )
 ```
 
-Now with a small update to our sampler we can pass all of our TP GPUs the same input:
+So if we have 4 GPUs total, and have a `(2, 2)` device mesh, here are the assignments:
+
+| | Data Parallel Group | Tensor Parallel Group |
+| --- | --- | --- |
+| GPU 0 | 0 | 0 |
+| GPU 1 | 0 | 1 |
+| GPU 2 | 1 | 0 |
+| GPU 3 | 1 | 1 |
+
+This doesn't actually mean anything unless we update the rest of our code to use these device meshes, so let's see how we do that!
+
+The first place is actually our data sampler, and this is how we get all of our GPUs in the tensor parallel group the same input:
 
 ```python
 sampler=DistributedSampler(
@@ -56,7 +69,16 @@ sampler=DistributedSampler(
 )
 ```
 
-Our new world size is size of the data parallel mesh, and our new rank is our processes rank in the data parallel mesh. Note that all of our processes on the same node will have the same data parallel rank, and this is what we want!
+From GPU 0's perspective above, it would have these arguments to DistributedSampler:
+
+| | num_replicas | rank|
+| --- | --- | --- |
+| GPU 0 | 2 | 0 |
+| GPU 1 | 2 | 0 |
+| GPU 2 | 2 | 1 |
+| GPU 3 | 2 | 1 |
+
+Because our DP dimension is size of 2, and our first table above actually shows the local_rank that we use to pass to DistributedSampler.
 
 ## Parallelizing linear & attention modules
 
