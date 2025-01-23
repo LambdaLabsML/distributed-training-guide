@@ -1,10 +1,24 @@
 # 2d parallelism (TP + DP)
 
-Using both FSDP and TP is actually quite simple when starting from our [TP script](../06-tensor-parallel/train_llm.py).
+Using both [FSDP](../04-fully-sharded-data-parallel) and [TP](../06-tensor-parallel) is actually quite simple code wise when starting from our [chapter 6 TP script](../06-tensor-parallel/train_llm.py).
 
-One caveat is that this only works if you use pytorch's newer FSDP 2 api, which is still in alpha stages.
+**Disclaimer** this only works if you use pytorch's **newer FSDP 2 api, which is still in alpha stages**.
+
+What does using these two together mean exactly? Let's get into an example with 6 GPUs, 2 way FSDP and 3 way TP:
+
+<img width="946" alt="image" src="https://github.com/user-attachments/assets/3590d043-dec8-4afc-8d33-bf5b886be1f2" />
+
+When we first start out every gpu holds the full model. Then we shard the model into 3 pieces (our TP dimension). Note that GPU 0 and GPU 3 **have the exact same shard**! This is because they are the same tensor parallel rank, but are different data parallel ranks. This means we have **duplicated** our model across our data parallel dimension.
+
+When we apply FSDP in the next step, we split those duplicated shards! So Shard 0 (which is duplicated on GPU 0 & 3) is split into two pieces (Shard 0,a and Shard 0,b).
+
+By the end we have 6 distinct shards of our model split on every GPU.
+
+Now if you remember with FSDP, it does an allgather of all the shards before the forward pass. When GPU 0 & GPU 3 are executing their forward passes, they will gather the two shards (Shard 0,a and Shard 0,b) into local memory to form Shard 0, so that each one can use the full shard during computation.
 
 ## Applying FSDP after TP
+
+We are starting from our [chapter 6 code](../06-tensor-parallel/train_llm.py), which already support TP. So we just need to add FSDP to the script:
 
 The api is much simpler than FSDP 1 api, this is all we need to add **after** our TP code:
 
@@ -16,6 +30,8 @@ if mesh["dp"].size() > 1:
         fully_shard(layer, mesh=mesh["dp"])
     fully_shard(model, mesh=mesh["dp"])
 ```
+
+Note how we are passing our `mesh["dp"]` here to indicate that this is happening across our data parallel dimension.
 
 ## Controlling TP size
 
