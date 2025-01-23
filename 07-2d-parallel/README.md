@@ -6,15 +6,15 @@ Using both [FSDP](../04-fully-sharded-data-parallel) and [TP](../06-tensor-paral
 
 What does using these two together mean exactly? Let's get into an example with 6 GPUs, 2 way FSDP and 3 way TP:
 
-<img width="933" alt="image" src="https://github.com/user-attachments/assets/74c2edd4-505d-4c2b-a543-1d8a1c7efd2b" />
+<img width="894" alt="image" src="https://github.com/user-attachments/assets/c384756a-66a9-4056-be1b-018fb046e275" />
 
-When we first start out every gpu holds the full model. Then we shard the model into 3 pieces (our TP dimension). Note that GPU 0 and GPU 3 **have the exact same shard**! This is because they are the same tensor parallel rank, but are different data parallel ranks. This means we have **duplicated** our model across our data parallel dimension.
+When we first start out every gpu holds the full model. Then we shard the model into 3 pieces (our TP dimension). The 3 shards in the graphic above are red+orange, yellow+green, and blue+purple. Note that GPU 0 and GPU 3 **have the exact same shard**! This is because they are the same tensor parallel rank, but are different data parallel ranks. This means we have **duplicated** our model across our data parallel dimension.
 
-When we apply FSDP in the next step, we split those duplicated shards! So Shard 0 (which is duplicated on GPU 0 & 3) is split into two pieces (Shard 0,a and Shard 0,b).
+When we apply FSDP in the next step, we split those duplicated shards! So Shard red+orange (which is duplicated on GPU 0 & 3) is split into two pieces (Shard red and Shard orange).
 
 By the end we have 6 distinct shards of our model split on every GPU.
 
-Now if you remember with FSDP, it does an allgather of all the shards before the forward pass. When GPU 0 & GPU 3 are executing their forward passes, they will gather the two shards (Shard 0,a and Shard 0,b) into local memory to form Shard 0, so that each one can use the full shard during computation.
+Now if you remember with FSDP, it does an allgather of all the shards before the forward pass. When GPU 0 & GPU 3 are executing their forward passes, they will gather the two shards (Shard red and Shard orange) into local memory to form Shard red+orange, so that each one can use the full shard during computation.
 
 ## Applying FSDP after TP
 
