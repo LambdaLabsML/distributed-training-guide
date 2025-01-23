@@ -127,18 +127,18 @@ The embeddings weight get's sharded along dimension 1. Meaning each GPU holds a 
 
 | Embedding Weight Shape | Sharded Shape |
 | --- | --- |
-| (vocab_size, hidden_dim) | (vocab_size, hidden_dim / mesh["tp"].size()) |
+| `(vocab_size, hidden_dim)` | `(vocab_size, hidden_dim / mesh["tp"].size())` |
 
 In a normal embedding layer it:
-- Input tokens of `shape=(batch, seq), dtype=torch.long`
-- Outputs embeddings of `shape=(batch, seq, hidden_dim), dtype=torch.bfloat16`
+- Takes input tokens of `shape=(batch, seq)`
+- Outputs embeddings of `shape=(batch, seq, hidden_dim)`
 
-Now that we've sharded it it will actually output:
+Now that we've sharded the embedding weight tensor, the layer will actually output:
 - Sharded output embeddings of `shape=(batch, seq, hidden_dim / mesh["tp"].size())`.
 
-We have a problem though: Our `self_attn` module will first receive the output of this embedding, and we used ColwiseParallel on that. ColwiseParallel actually expects input to be **replicated** not shared.
+We have a problem though: Our *colwise* pieces of the `self_attn` module will receive the output of this module. ColwiseParallel actually expects input to be **replicated** not sharded.
 
-So we need to transform the tensor to `shape=(batch, seq, hidden_dim)`. Luckily we can just specify this additional transformation with the `output_layouts` argument:
+So we need to do an allgather on the tensor to replicate it across the group (i.e. it will be back to `shape=(batch, seq, hidden_dim)`). Luckily we can just specify this additional transformation with the `output_layouts` argument:
 
 ```python
 tp.parallelize_module(
@@ -162,7 +162,7 @@ tp.parallelize_module(
 )
 ```
 
-We have to include `Replicate()` here because by default colwise shards on the last dimension, but we need the output of the network to be replicated across our TP dimension.
+We have to include `Replicate()` here because our loss expects replicated tensors, but colwise by default shards on the last dimension.
 
 ## Parallelizing Norm Layers with SequenceParallel
 
