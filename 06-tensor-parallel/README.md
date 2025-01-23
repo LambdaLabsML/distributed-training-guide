@@ -48,7 +48,7 @@ mesh = dist.device_mesh.init_device_mesh(
 
 So if we have 4 GPUs total, and have a `(2, 2)` device mesh, here are the assignments:
 
-| | Data Parallel Group | Tensor Parallel Group |
+| | DP rank | TP rank |
 | --- | --- | --- |
 | GPU 0 | 0 | 0 |
 | GPU 1 | 0 | 1 |
