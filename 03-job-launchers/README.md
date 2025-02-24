@@ -76,7 +76,7 @@ Submit the training job using the provided `job.sbatch` script:
 
 ```bash
 cd distributed-training-guide/03-job-launchers
-sbatch --nnodes 2 --gpus 16 --cpus-per-task 8 job.sbatch
+sbatch --nodes 2 --gpus 16 --cpus-per-task 8 job.sbatch
 ```
 
 By default slurm assigns 1 task per node, which is great for us because we will invoke torchrun once per node.
