@@ -14,12 +14,7 @@ from torch.utils.data import DataLoader
 from torch.utils.data.distributed import DistributedSampler
 from torch import distributed as dist
 from torch.distributed.elastic.multiprocessing.errors import record
-from torch.distributed.fsdp.fully_sharded_data_parallel import (
-    FullyShardedDataParallel,
-    CPUOffload,
-    ShardingStrategy,
-)
-from torch.distributed.fsdp.wrap import size_based_auto_wrap_policy
+from torch.distributed.fsdp import fully_shard, CPUOffloadPolicy, MixedPrecisionPolicy
 from torch.distributed.checkpoint.state_dict import (
     get_state_dict,
     set_state_dict,
@@ -51,56 +46,65 @@ def main():
     parser = _get_parser()
     args = parser.parse_args()
 
-    dist.init_process_group()
-
-    rank = dist.get_rank()
+    rank = int(os.getenv("RANK", "0"))
     local_rank = rank % torch.cuda.device_count()
-    world_size = dist.get_world_size()
+    world_size = int(os.getenv("WORLD_SIZE", "1"))
+
+    device = torch.device(f"cuda:{local_rank}")
+    torch.cuda.set_device(device)
+
+    dist.init_process_group(rank=rank, world_size=world_size, device_id=device)
 
     logging.basicConfig(
         format=f"[rank={rank}] [%(asctime)s] %(levelname)s:%(message)s",
         level=logging.INFO,
     )
 
-    LOGGER.info(os.environ)
-    LOGGER.info(args)
-    LOGGER.info(f"local_rank={local_rank} rank={rank} world size={world_size}")
+    LOGGER.debug(os.environ)
+    LOGGER.debug(args)
+    LOGGER.debug(f"local_rank={local_rank} rank={rank} world size={world_size}")
 
-    device = torch.device(f"cuda:{local_rank}")
     dtype = torch.bfloat16
-    torch.cuda.set_device(device)
-
     torch.manual_seed(args.seed)
 
-    with rank0_first():
+    # NOTE: meta device will not allocate any memory
+    model: torch.nn.Module
+    with rank0_first(), torch.device("meta"):
         config = AutoConfig.from_pretrained(args.model_name, use_cache=False)
-        # NOTE: meta device will not allocate any memory
-        with torch.device("meta"):
-            model = AutoModelForCausalLM.from_config(config, torch_dtype=dtype)
-    LOGGER.info(f"{sum(p.numel() for p in model.parameters())} model parameters")
-
-    LOGGER.info(f"Before FSDP: {get_mem_stats(device)}")
-
-    wrap_policy = functools.partial(
-        size_based_auto_wrap_policy, min_num_params=int(args.numel_to_wrap)
-    )
-    model = FullyShardedDataParallel(
-        model,
-        device_id=local_rank,
-        sync_module_states=True,
-        # NOTE: FULL_SHARD is equivalent to deepspeed ZeRO stage 3
-        auto_wrap_policy=wrap_policy,
-        sharding_strategy=ShardingStrategy.FULL_SHARD,
-        cpu_offload=CPUOffload(offload_params=args.cpu_offload == "on"),
+        model = AutoModelForCausalLM.from_config(config, dtype=dtype)
+    LOGGER.info(
+        f"Training {sum(p.numel() for p in model.parameters())} model parameters"
     )
 
-    LOGGER.info(f"After FSDP: {get_mem_stats(device)}")
+    fsdp_config = dict(
+        reshard_after_forward=True,
+        offload_policy=CPUOffloadPolicy() if args.cpu_offload == "on" else None,
+        mp_policy=MixedPrecisionPolicy(
+            param_dtype=torch.bfloat16,
+            reduce_dtype=torch.float32,
+        ),
+    )
+    for decoder in model.model.layers:
+        fully_shard(decoder, **fsdp_config)
+    fully_shard(model, **fsdp_config)
+
+    model.to_empty(device=device)
+    def reset_params(m):
+        if hasattr(m, "reset_parameters"):
+            m.reset_parameters()
+
+    model.apply(reset_params)
+
+    LOGGER.info(f"Initialized model uses {get_mem_stats(device)['curr_alloc_gb']}gb")
+
+    model = torch.compile(model)
+    LOGGER.info("Compiled model")
 
     # NOTE: since this can download data, make sure to do the main process first
     # NOTE: This assumes that the data is on a **shared** network drive, accessible to all processes
     with rank0_first():
         train_data = _load_and_preprocess_data(args, config)
-    LOGGER.info(f"{len(train_data)} training samples")
+    LOGGER.debug(f"{len(train_data)} training samples")
 
     dataloader = DataLoader(
         train_data,
@@ -109,7 +113,7 @@ def main():
         # NOTE: this sampler will split dataset evenly across workers
         sampler=DistributedSampler(train_data, shuffle=True, drop_last=True),
     )
-    LOGGER.info(f"{len(dataloader)} batches per epoch")
+    LOGGER.debug(f"{len(dataloader)} batches per epoch")
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, fused=True)
     lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
@@ -229,7 +233,7 @@ def main():
                     "epoch_progress": state["epoch_step"] / len(dataloader),
                     "num_batches_remaining": len(dataloader) - i_step,
                     **get_mem_stats(device),
-                    "tok/s": 1000 * tok_per_step / ms_per_step,
+                    "tokens_per_s": 1000 * tok_per_step / ms_per_step,
                     "time/total": ms_per_step,
                     **{
                         f"time/{k}": timer.avg_elapsed_ms()
@@ -272,7 +276,7 @@ def _load_and_preprocess_data(args, config):
     """
     tokenizer = AutoTokenizer.from_pretrained(args.model_name)
 
-    data = datasets.load_dataset(args.dataset_name, trust_remote_code=True)
+    data = datasets.load_dataset(args.dataset_name)
 
     column_names = data["train"].column_names
     text_column_name = "text" if "text" in column_names else column_names[0]
@@ -386,12 +390,6 @@ def _get_parser() -> argparse.ArgumentParser:
     parser.add_argument("--log-freq", default=100, type=int)
     parser.add_argument("--ckpt-freq", default=500, type=int)
     parser.add_argument("-s", "--seq-length", default=1024, type=int)
-    parser.add_argument(
-        "--numel-to-wrap",
-        default=100_000_000,
-        type=int,
-        help="Only applies FSDP to modules with numel > this value.",
-    )
     parser.add_argument("--cpu-offload", default="off", choices=["on", "off"])
     return parser
 

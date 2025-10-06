@@ -33,8 +33,8 @@ def main():
     )
 
     # Helpful to log this information when running on multiple nodes to make sure all nodes have the same environment.
-    LOGGER.info(os.environ)
-    LOGGER.info(args)
+    LOGGER.debug(os.environ)
+    LOGGER.debug(args)
 
     # This guide assumes CUDA device is available, and does all training in bf16
     device = torch.device("cuda")
@@ -46,11 +46,11 @@ def main():
     # Note: Initializing an **untrained** model
     config = AutoConfig.from_pretrained(args.model_name, use_cache=False)
     with device:
-        model = AutoModelForCausalLM.from_config(config, torch_dtype=dtype)
-    LOGGER.info(f"{sum(p.numel() for p in model.parameters())} model parameters")
+        model = AutoModelForCausalLM.from_config(config, dtype=dtype)
+    LOGGER.info(f"Training {sum(p.numel() for p in model.parameters())} model parameters")
 
     train_data = _load_and_preprocess_data(args, config)
-    LOGGER.info(f"{len(train_data)} training samples")
+    LOGGER.debug(f"{len(train_data)} training samples")
 
     # Standard pytorch dataset iterator
     dataloader = DataLoader(
@@ -164,7 +164,7 @@ def main():
                     "epoch_progress": state["epoch_step"] / len(dataloader),
                     "num_batches_remaining": len(dataloader) - i_step,
                     **get_mem_stats(device),
-                    "tok/s": 1000 * tok_per_step / ms_per_step,
+                    "tokens_per_s": 1000 * tok_per_step / ms_per_step,
                     "time/total": ms_per_step,
                     **{
                         f"time/{k}": timer.avg_elapsed_ms()

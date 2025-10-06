@@ -1,5 +1,5 @@
-wandb==0.17.5
-torch==2.5.1
+wandb==0.22.1
+torch==2.8.0
 tqdm
-datasets==3.2.0
-transformers==4.48.0
+datasets==4.1.1
+transformers==4.57.0

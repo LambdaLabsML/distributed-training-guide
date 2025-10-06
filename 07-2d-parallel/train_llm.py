@@ -262,7 +262,7 @@ def main():
                     "epoch": state["epoch"],
                     "epoch_progress": state["epoch_step"] / len(dataloader),
                     "num_batches_remaining": len(dataloader) - i_step,
-                    "tok/s": 1000 * tok_per_step / ms_per_step,
+                    "tokens_per_s": 1000 * tok_per_step / ms_per_step,
                     **get_mem_stats(device),
                     "time/total": sum(t.avg_elapsed_ms() for t in timers.values()),
                     **{
