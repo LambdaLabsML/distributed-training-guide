@@ -173,7 +173,7 @@ def main():
                     "epoch_progress": state["epoch_step"] / len(dataloader),
                     "num_batches_remaining": len(dataloader) - i_step,
                     **get_mem_stats(device),
-                    "tok/s": 1000 * tok_per_step / ms_per_step,
+                    "tokens_per_s": 1000 * tok_per_step / ms_per_step,
                     "time/total": ms_per_step,
                     **{
                         f"time/{k}": timer.avg_elapsed_ms()

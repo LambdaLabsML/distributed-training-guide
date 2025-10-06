@@ -1,7 +1,5 @@
 import argparse
 from contextlib import contextmanager
-import functools
-from itertools import chain
 import json
 import multiprocessing
 import os
@@ -14,12 +12,7 @@ from torch.utils.data import DataLoader
 from torch.utils.data.distributed import DistributedSampler
 from torch import distributed as dist
 from torch.distributed.elastic.multiprocessing.errors import record
-from torch.distributed.fsdp.fully_sharded_data_parallel import (
-    FullyShardedDataParallel,
-    CPUOffload,
-    ShardingStrategy,
-)
-from torch.distributed.fsdp.wrap import size_based_auto_wrap_policy
+from torch.distributed.fsdp import fully_shard, CPUOffloadPolicy, MixedPrecisionPolicy
 from torch.distributed.checkpoint.state_dict import (
     get_state_dict,
     set_state_dict,
@@ -27,8 +20,6 @@ from torch.distributed.checkpoint.state_dict import (
 )
 from torch.distributed.checkpoint import load, save
 
-
-import wandb
 import tqdm
 import datasets
 from transformers import (
@@ -37,9 +28,10 @@ from transformers import (
     AutoTokenizer,
     default_data_collator,
 )
-from transformers.models.llama.modeling_llama import LlamaRMSNorm, LlamaRotaryEmbedding
 
 # fixes for reset_parameters not existing
+from transformers.models.llama.modeling_llama import LlamaRMSNorm, LlamaRotaryEmbedding
+
 LlamaRMSNorm.reset_parameters = lambda self: torch.nn.init.ones_(self.weight)
 LlamaRotaryEmbedding.reset_parameters = lambda _: None
 
@@ -51,56 +43,65 @@ def main():
     parser = _get_parser()
     args = parser.parse_args()
 
-    dist.init_process_group()
-
-    rank = dist.get_rank()
+    rank = int(os.getenv("RANK", "0"))
     local_rank = rank % torch.cuda.device_count()
-    world_size = dist.get_world_size()
+    world_size = int(os.getenv("WORLD_SIZE", "1"))
+
+    device = torch.device(f"cuda:{local_rank}")
+    torch.cuda.set_device(device)
+
+    dist.init_process_group(rank=rank, world_size=world_size, device_id=device)
 
     logging.basicConfig(
         format=f"[rank={rank}] [%(asctime)s] %(levelname)s:%(message)s",
         level=logging.INFO,
     )
 
-    LOGGER.info(os.environ)
-    LOGGER.info(args)
-    LOGGER.info(f"local_rank={local_rank} rank={rank} world size={world_size}")
+    LOGGER.debug(os.environ)
+    LOGGER.debug(args)
+    LOGGER.debug(f"local_rank={local_rank} rank={rank} world size={world_size}")
 
-    device = torch.device(f"cuda:{local_rank}")
     dtype = torch.bfloat16
-    torch.cuda.set_device(device)
-
     torch.manual_seed(args.seed)
 
-    with rank0_first():
+    # NOTE: meta device will not allocate any memory
+    model: torch.nn.Module
+    with rank0_first(), torch.device("meta"):
         config = AutoConfig.from_pretrained(args.model_name, use_cache=False)
-        # NOTE: meta device will not allocate any memory
-        with torch.device("meta"):
-            model = AutoModelForCausalLM.from_config(config, torch_dtype=dtype)
-    LOGGER.info(f"{sum(p.numel() for p in model.parameters())} model parameters")
-
-    LOGGER.info(f"Before FSDP: {get_mem_stats(device)}")
-
-    wrap_policy = functools.partial(
-        size_based_auto_wrap_policy, min_num_params=int(args.numel_to_wrap)
-    )
-    model = FullyShardedDataParallel(
-        model,
-        device_id=local_rank,
-        sync_module_states=True,
-        # NOTE: FULL_SHARD is equivalent to deepspeed ZeRO stage 3
-        auto_wrap_policy=wrap_policy,
-        sharding_strategy=ShardingStrategy.FULL_SHARD,
-        cpu_offload=CPUOffload(offload_params=args.cpu_offload == "on"),
+        model = AutoModelForCausalLM.from_config(config, dtype=dtype)
+    LOGGER.info(
+        f"Training {sum(p.numel() for p in model.parameters())} model parameters"
     )
 
-    LOGGER.info(f"After FSDP: {get_mem_stats(device)}")
+    fsdp_config = dict(
+        reshard_after_forward=True,
+        offload_policy=CPUOffloadPolicy() if args.cpu_offload == "on" else None,
+        mp_policy=MixedPrecisionPolicy(
+            param_dtype=torch.bfloat16,
+            reduce_dtype=torch.float32,
+        ),
+    )
+    for decoder in model.model.layers:
+        fully_shard(decoder, **fsdp_config)
+    fully_shard(model, **fsdp_config)
+    LOGGER.debug("Sharded model")
+
+    model.to_empty(device=device)
+    LOGGER.info(f"Initialized model uses {get_mem_stats(device)['curr_alloc_gb']}gb")
+
+    model.apply(
+        lambda m: m.reset_parameters() if hasattr(m, "reset_parameters") else None
+    )
+    LOGGER.debug("Reset model weights")
+
+    model = torch.compile(model)
+    LOGGER.debug("Compiled model")
 
     # NOTE: since this can download data, make sure to do the main process first
     # NOTE: This assumes that the data is on a **shared** network drive, accessible to all processes
     with rank0_first():
         train_data = _load_and_preprocess_data(args, config)
-    LOGGER.info(f"{len(train_data)} training samples")
+    LOGGER.debug(f"{len(train_data)} training samples")
 
     dataloader = DataLoader(
         train_data,
@@ -109,14 +110,18 @@ def main():
         # NOTE: this sampler will split dataset evenly across workers
         sampler=DistributedSampler(train_data, shuffle=True, drop_last=True),
     )
-    LOGGER.info(f"{len(dataloader)} batches per epoch")
+    LOGGER.debug(f"{len(dataloader)} batches per epoch")
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, fused=True)
     lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
         optimizer, T_max=1000, eta_min=args.lr * 1e-2
     )
 
-    exp_dir: Path = Path(args.save_dir) / args.experiment_name
+    is_experiment = False
+    exp_dir: Path = Path(args.save_dir)
+    if args.experiment_name is not None:
+        is_experiment = True
+        exp_dir = exp_dir / args.experiment_name
 
     # NOTE: full_state_dict=False means we will be saving sharded checkpoints.
     ckpt_opts = StateDictOptions(full_state_dict=False, cpu_offload=True)
@@ -129,7 +134,7 @@ def main():
         "running_loss": 0,
     }
     resumed = False
-    if (exp_dir / "state.json").exists():
+    if is_experiment and (exp_dir / "state.json").exists():
         sharded_model_state, sharded_optimizer_state = get_state_dict(
             model, optimizer, options=ckpt_opts
         )
@@ -155,31 +160,17 @@ def main():
     LOGGER.info(f"Resumed={resumed} | {state}")
     dist.barrier()
 
-    if (exp_dir.is_mount() and rank == 0) or (
-        not exp_dir.is_mount() and local_rank == 0
+    if is_experiment and (
+        (exp_dir.is_mount() and rank == 0)
+        or (not exp_dir.is_mount() and local_rank == 0)
     ):
         LOGGER.info(f"Creating experiment root directory")
         exp_dir.mkdir(parents=True, exist_ok=True)
     dist.barrier()
 
-    (exp_dir / f"rank-{rank}").mkdir(parents=True, exist_ok=True)
-    LOGGER.info(f"Worker saving to {exp_dir / f'rank-{rank}'}")
-
-    if rank == 0:
-        wandb.init(
-            project="distributed-training-guide",
-            dir=exp_dir,
-            name=args.experiment_name,
-            id=args.experiment_name,
-            resume="must" if resumed else None,
-            save_code=True,
-            config={
-                "args": vars(args),
-                "training_data_size": len(train_data),
-                "num_batches": len(dataloader),
-                "world_size": world_size,
-            },
-        )
+    if is_experiment:
+        (exp_dir / f"rank-{rank}").mkdir(parents=True, exist_ok=True)
+        LOGGER.info(f"Worker saving to {exp_dir / f'rank-{rank}'}")
 
     timers = {k: LocalTimer(device) for k in ["data", "forward", "backward", "update"]}
 
@@ -229,7 +220,7 @@ def main():
                     "epoch_progress": state["epoch_step"] / len(dataloader),
                     "num_batches_remaining": len(dataloader) - i_step,
                     **get_mem_stats(device),
-                    "tok/s": 1000 * tok_per_step / ms_per_step,
+                    "tokens_per_s": 1000 * tok_per_step / ms_per_step,
                     "time/total": ms_per_step,
                     **{
                         f"time/{k}": timer.avg_elapsed_ms()
@@ -238,15 +229,13 @@ def main():
                 }
 
                 LOGGER.info(info)
-                if rank == 0:
-                    wandb.log(info, step=state["global_step"])
 
                 torch.cuda.reset_peak_memory_stats(device)
                 state["running_loss"] = 0
                 for t in timers.values():
                     t.reset()
 
-            if state["global_step"] % args.ckpt_freq == 0:
+            if is_experiment and state["global_step"] % args.ckpt_freq == 0:
                 dist.barrier()
                 # NOTE: we have to call this on ALL ranks
                 sharded_model_state, sharded_optimizer_state = get_state_dict(
@@ -270,9 +259,11 @@ def _load_and_preprocess_data(args, config):
     Function created using code found in
     https://github.com/huggingface/transformers/blob/v4.45.1/examples/pytorch/language-modeling/run_clm_no_trainer.py
     """
+    from itertools import chain
+
     tokenizer = AutoTokenizer.from_pretrained(args.model_name)
 
-    data = datasets.load_dataset(args.dataset_name, trust_remote_code=True)
+    data = datasets.load_dataset(args.dataset_name, args.dataset_subset)
 
     column_names = data["train"].column_names
     text_column_name = "text" if "text" in column_names else column_names[0]
@@ -375,8 +366,9 @@ class LocalTimer:
 
 def _get_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser()
-    parser.add_argument("-e", "--experiment-name", default=None, required=True)
+    parser.add_argument("-e", "--experiment-name", default=None)
     parser.add_argument("-d", "--dataset-name", default=None, required=True)
+    parser.add_argument("--dataset-subset", default=None)
     parser.add_argument("-m", "--model-name", default=None, required=True)
     parser.add_argument("--save-dir", default="../outputs")
     parser.add_argument("--seed", default=0, type=int)
@@ -386,12 +378,6 @@ def _get_parser() -> argparse.ArgumentParser:
     parser.add_argument("--log-freq", default=100, type=int)
     parser.add_argument("--ckpt-freq", default=500, type=int)
     parser.add_argument("-s", "--seq-length", default=1024, type=int)
-    parser.add_argument(
-        "--numel-to-wrap",
-        default=100_000_000,
-        type=int,
-        help="Only applies FSDP to modules with numel > this value.",
-    )
     parser.add_argument("--cpu-offload", default="off", choices=["on", "off"])
     return parser
 
