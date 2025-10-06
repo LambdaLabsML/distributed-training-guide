@@ -177,7 +177,7 @@ This is a helpful thing to do to handle all the processes outputting to the same
 +from torch.nn.parallel import DistributedDataParallel
 
  with device: 
-     model = AutoModelForCausalLM.from_config(config, torch_dtype=dtype)
+     model = AutoModelForCausalLM.from_config(config, dtype=dtype)
 
 +model = DistributedDataParallel(model, device_ids=[local_rank])
 ```
@@ -267,7 +267,7 @@ Downloading model weights & tokenizer:
 +with rank0_first():
      config = AutoConfig.from_pretrained(args.model_name, use_cache=False)
      with device:
-         model = AutoModelForCausalLM.from_config(config, torch_dtype=dtype)
+         model = AutoModelForCausalLM.from_config(config, dtype=dtype)
 ```
 
 Downloading data:

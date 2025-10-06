@@ -75,7 +75,7 @@ def main():
         config = AutoConfig.from_pretrained(args.model_name, use_cache=False)
         with device:
             model = AutoModelForCausalLM.from_config(
-                config, torch_dtype=dtype, attn_implementation="flash_attention_2"
+                config, dtype=dtype, attn_implementation="flash_attention_2"
             )
     LOGGER.info(f"{sum(p.numel() for p in model.parameters())} model parameters")
 
@@ -296,7 +296,7 @@ def _load_and_preprocess_data(args, config):
     """
     tokenizer = AutoTokenizer.from_pretrained(args.model_name)
 
-    data = datasets.load_dataset(args.dataset_name, trust_remote_code=True)
+    data = datasets.load_dataset(args.dataset_name, args.dataset_subset)
 
     column_names = data["train"].column_names
     text_column_name = "text" if "text" in column_names else column_names[0]

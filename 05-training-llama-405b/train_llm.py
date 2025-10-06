@@ -18,16 +18,13 @@ from torch.distributed.algorithms._checkpoint.checkpoint_wrapper import (
     checkpoint_wrapper,
 )
 from torch.distributed.elastic.multiprocessing.errors import record
-from torch.distributed.fsdp.fully_sharded_data_parallel import (
-    FullyShardedDataParallel,
-    CPUOffload,
-    ShardingStrategy,
-)
+from torch.distributed.fsdp import fully_shard, CPUOffloadPolicy, MixedPrecisionPolicy
 from torch.distributed.fsdp.wrap import transformer_auto_wrap_policy
 from torch.distributed.checkpoint.state_dict import (
     get_state_dict,
     set_state_dict,
     StateDictOptions,
+    set_model_state_dict,
 )
 from torch.distributed.checkpoint import load, save
 
@@ -53,35 +50,36 @@ def main():
     parser = _get_parser()
     args = parser.parse_args()
 
-    dist.init_process_group()
-
-    rank = dist.get_rank()
+    rank = int(os.getenv("RANK", "0"))
     local_rank = rank % torch.cuda.device_count()
-    world_size = dist.get_world_size()
+    world_size = int(os.getenv("WORLD_SIZE", "1"))
+    device = torch.device(f"cuda:{local_rank}")
+    torch.cuda.set_device(device)
+    dist.init_process_group(rank=rank, world_size=world_size, device_id=device)
 
     logging.basicConfig(
         format=f"[rank={rank}] [%(asctime)s] %(levelname)s:%(message)s",
         level=logging.INFO,
     )
 
-    LOGGER.info(os.environ)
-    LOGGER.info(args)
-    LOGGER.info(f"local_rank={local_rank} rank={rank} world size={world_size}")
+    LOGGER.debug(os.environ)
+    LOGGER.debug(args)
+    LOGGER.debug(f"local_rank={local_rank} rank={rank} world size={world_size}")
 
-    device = torch.device(f"cuda:{local_rank}")
     dtype = torch.bfloat16
-    torch.cuda.set_device(device)
-
     torch.manual_seed(args.seed)
 
-    LOGGER.info(f"Loading model from HF_HOME={os.environ['HF_HOME']}")
+    LOGGER.info(f"Loading model from HF_HOME={os.getenv('HF_HOME')}")
 
-    config = AutoConfig.from_pretrained(args.model_name, use_cache=False)
+    model: torch.nn.Module
+    with rank_ordered(should_go_first=local_rank == 0):
+        config = AutoConfig.from_pretrained(args.model_name, use_cache=False)
+
     if rank == 0:
         with torch.device("cpu"):
             model = AutoModelForCausalLM.from_pretrained(
                 args.model_name,
-                torch_dtype=dtype,
+                dtype=dtype,
                 attn_implementation="flash_attention_2",
                 use_cache=False,
             )
@@ -89,45 +87,84 @@ def main():
         with torch.device("meta"):
             model = AutoModelForCausalLM.from_config(
                 config,
-                torch_dtype=dtype,
+                dtype=dtype,
                 attn_implementation="flash_attention_2",
             )
-    LOGGER.info(f"{sum(p.numel() for p in model.parameters())} model parameters")
-
-    LOGGER.info(f"Before FSDP: {get_mem_stats(device)}")
-
-    from torch.nn import Embedding
-    from transformers.models.llama.modeling_llama import LlamaDecoderLayer
-
-    wrap_policy = functools.partial(
-        transformer_auto_wrap_policy,
-        transformer_layer_cls={LlamaDecoderLayer, Embedding},
+    LOGGER.info(
+        f"Training {sum(p.numel() for p in model.parameters())} model parameters"
     )
-    model = FullyShardedDataParallel(
+
+    fsdp_config = dict(
+        reshard_after_forward=True,
+        offload_policy=CPUOffloadPolicy() if args.cpu_offload == "on" else None,
+        mp_policy=MixedPrecisionPolicy(
+            param_dtype=torch.bfloat16,
+            reduce_dtype=torch.float32,
+        ),
+    )
+    for decoder in model.model.layers:
+        fully_shard(decoder, **fsdp_config)
+    fully_shard(model, **fsdp_config)
+    LOGGER.debug("Sharded model")
+
+    if args.layer_prefetching == "on":
+        num_prefetch = 1
+        num_layers = len(model.model.layers)
+        for i, layer in enumerate(model.model.layers):
+            layer.set_modules_to_forward_prefetch(
+                [
+                    model.model.layers[i + j]
+                    for j in range(1, num_prefetch + 1)
+                    if i + j < num_layers
+                ]
+            )
+            layer.set_modules_to_backward_prefetch(
+                [
+                    model.model.layers[i - j]
+                    for j in range(1, num_prefetch + 1)
+                    if i - j >= 0
+                ]
+            )
+
+    model.to_empty(device=device)
+    LOGGER.info(f"Initialized model uses {get_mem_stats(device)['curr_alloc_gb']}gb")
+
+    set_model_state_dict(
         model,
-        device_id=local_rank,
-        param_init_fn=lambda m: m.to_empty(device=device, recurse=False),
-        sync_module_states=True,
-        # NOTE: FULL_SHARD is equivalent to deepspeed ZeRO stage 3
-        auto_wrap_policy=wrap_policy,
-        sharding_strategy=ShardingStrategy.FULL_SHARD,
-        cpu_offload=CPUOffload(offload_params=args.cpu_offload == "on"),
+        model.state_dict(),
+        options=StateDictOptions(
+            full_state_dict=True,
+            broadcast_from_rank0=True,
+        ),
     )
-
-    LOGGER.info(f"After FSDP: {get_mem_stats(device)}")
-    LOGGER.info(f"FSDP architecture: {model}")
+    LOGGER.info("Loaded pretrained model weights")
 
     # Applying gradient checkpointing - note that only the LlamaDecoderLayer supports this,
     # so we can just reuse our existing wrap_policy.
-    apply_activation_checkpointing(
-        model, checkpoint_wrapper_fn=checkpoint_wrapper, auto_wrap_policy=wrap_policy
-    )
+    if args.activation_checkpointing == "on":
+        from torch.nn import Embedding
+        from transformers.models.llama.modeling_llama import LlamaDecoderLayer
+
+        wrap_policy = functools.partial(
+            transformer_auto_wrap_policy,
+            transformer_layer_cls={LlamaDecoderLayer, Embedding},
+        )
+        apply_activation_checkpointing(
+            model,
+            checkpoint_wrapper_fn=checkpoint_wrapper,
+            auto_wrap_policy=wrap_policy,
+        )
+        LOGGER.info("Applied gradient checkpoint")
+
+    if args.model_compilation == "on":
+        model = torch.compile(model)
+        LOGGER.info("Compiled model")
 
     # NOTE: since this can download data, make sure to do the main process first on each node
     # since we manually specified HF_HOME to be a node local drive.
     with rank_ordered(should_go_first=local_rank == 0):
         train_data = _load_and_preprocess_data(args, config)
-    LOGGER.info(f"{len(train_data)} training samples")
+    LOGGER.debug(f"{len(train_data)} training samples")
 
     dataloader = DataLoader(
         train_data,
@@ -138,14 +175,18 @@ def main():
         # NOTE: this sampler will split dataset evenly across workers
         sampler=DistributedSampler(train_data, shuffle=True, drop_last=True),
     )
-    LOGGER.info(f"{len(dataloader)} batches per epoch")
+    LOGGER.debug(f"{len(dataloader)} batches per epoch")
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, fused=True)
     lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
         optimizer, T_max=1000, eta_min=args.lr * 1e-2
     )
 
-    exp_dir: Path = Path(args.save_dir) / args.experiment_name
+    is_experiment = False
+    exp_dir: Path = Path(args.save_dir)
+    if args.experiment_name is not None:
+        is_experiment = True
+        exp_dir = exp_dir / args.experiment_name
 
     # NOTE: full_state_dict=False means we will be saving sharded checkpoints.
     ckpt_opts = StateDictOptions(full_state_dict=False, cpu_offload=True)
@@ -158,7 +199,7 @@ def main():
         "running_loss": 0,
     }
     resumed = False
-    if (exp_dir / "state.json").exists():
+    if is_experiment and (exp_dir / "state.json").exists():
         sharded_model_state, sharded_optimizer_state = get_state_dict(
             model, optimizer, options=ckpt_opts
         )
@@ -184,8 +225,9 @@ def main():
     LOGGER.info(f"Resumed={resumed} | {state}")
     dist.barrier()
 
-    if (exp_dir.is_mount() and rank == 0) or (
-        not exp_dir.is_mount() and local_rank == 0
+    if is_experiment and (
+        (exp_dir.is_mount() and rank == 0)
+        or (not exp_dir.is_mount() and local_rank == 0)
     ):
         LOGGER.info(f"Creating experiment root directory")
         exp_dir.mkdir(parents=True, exist_ok=True)
@@ -282,7 +324,7 @@ def _load_and_preprocess_data(args, config):
     """
     tokenizer = AutoTokenizer.from_pretrained(args.model_name)
 
-    data = datasets.load_dataset(args.dataset_name, trust_remote_code=True)
+    data = datasets.load_dataset(args.dataset_name, args.dataset_subset)
 
     column_names = data["train"].column_names
     text_column_name = "text" if "text" in column_names else column_names[0]
@@ -384,8 +426,9 @@ class LocalTimer:
 
 def _get_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser()
-    parser.add_argument("-e", "--experiment-name", default=None, required=True)
+    parser.add_argument("-e", "--experiment-name", default=None)
     parser.add_argument("-d", "--dataset-name", default=None, required=True)
+    parser.add_argument("--dataset-subset", default=None)
     parser.add_argument("-m", "--model-name", default=None, required=True)
     parser.add_argument("--save-dir", default="../outputs")
     parser.add_argument("--seed", default=0, type=int)
@@ -396,6 +439,9 @@ def _get_parser() -> argparse.ArgumentParser:
     parser.add_argument("--ckpt-freq", default=500, type=int)
     parser.add_argument("-s", "--seq-length", default=1024, type=int)
     parser.add_argument("--cpu-offload", default="on", choices=["on", "off"])
+    parser.add_argument("--activation-checkpointing", default="on", choices=["on", "off"])
+    parser.add_argument("--layer-prefetching", default="on", choices=["on", "off"])
+    parser.add_argument("--model-compilation", default="on", choices=["on", "off"])
     return parser
 
 

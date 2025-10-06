@@ -46,10 +46,8 @@ def main():
     rank = int(os.getenv("RANK", "0"))
     local_rank = rank % torch.cuda.device_count()
     world_size = int(os.getenv("WORLD_SIZE", "1"))
-
     device = torch.device(f"cuda:{local_rank}")
     torch.cuda.set_device(device)
-
     dist.init_process_group(rank=rank, world_size=world_size, device_id=device)
 
     logging.basicConfig(

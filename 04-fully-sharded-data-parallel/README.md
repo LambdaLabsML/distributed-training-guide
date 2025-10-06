@@ -70,7 +70,7 @@ This is useful when training large models when we don't want to actually initial
 
 ```python
 with torch.device("meta"):
-    model = AutoModelForCausalLM.from_config(config, torch_dtype=dtype)
+    model = AutoModelForCausalLM.from_config(config, dtype=dtype)
 ```
 
 ### The FSDP Constructor

@@ -83,7 +83,7 @@ We are training a BF16 causal language model (think GPT) using `transformers`
 
 ```python
 config = AutoConfig.from_pretrained(args.model_name, use_cache=False)
-model = AutoModelForCausalLM.from_config(config, torch_dtype=dtype).to(device)
+model = AutoModelForCausalLM.from_config(config, dtype=dtype).to(device)
 ```
 
 ### Initializing our dataset

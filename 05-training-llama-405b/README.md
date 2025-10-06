@@ -93,7 +93,7 @@ if rank == 0:
         model = AutoModelForCausalLM.from_pretrained(...)
 else:
     with torch.device("meta"):
-        model = AutoModelForCausalLM.from_config(config, torch_dtype=dtype)
+        model = AutoModelForCausalLM.from_config(config, dtype=dtype)
 ```
 
 Then later, sync_module_states in [FSDP constructor](../04-fully-sharded-data-parallel/README.md#the-fsdp-constructor) will make sure the weights are broadcasted from rank 0 to the other ranks.

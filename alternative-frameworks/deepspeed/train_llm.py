@@ -56,7 +56,7 @@ def main():
     with rank0_first():
         config = AutoConfig.from_pretrained(args.model_name, use_cache=False)
         with deepspeed.zero.Init(remote_device="cpu", pin_memory=True):
-            model = AutoModelForCausalLM.from_config(config, torch_dtype=dtype)
+            model = AutoModelForCausalLM.from_config(config, dtype=dtype)
     LOGGER.info(f"{sum(p.numel() for p in model.parameters())} model parameters")
 
     # NOTE: since this can download data, make sure to do the main process first
@@ -205,7 +205,7 @@ def _load_and_preprocess_data(args, config):
     """
     tokenizer = AutoTokenizer.from_pretrained(args.model_name)
 
-    data = datasets.load_dataset(args.dataset_name, trust_remote_code=True)
+    data = datasets.load_dataset(args.dataset_name, args.dataset_subset)
 
     column_names = data["train"].column_names
     text_column_name = "text" if "text" in column_names else column_names[0]
