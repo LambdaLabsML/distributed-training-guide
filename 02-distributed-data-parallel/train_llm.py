@@ -33,40 +33,40 @@ def main():
     parser = _get_parser()
     args = parser.parse_args()
 
-    dist.init_process_group()
-
-    rank = dist.get_rank()
+    rank = int(os.getenv("RANK", "0"))
     local_rank = rank % torch.cuda.device_count()
-    world_size = dist.get_world_size()
+    world_size = int(os.getenv("WORLD_SIZE", "1"))
+    device = torch.device(f"cuda:{local_rank}")
+    torch.cuda.set_device(device)
+    dist.init_process_group(rank=rank, world_size=world_size, device_id=device)
 
     logging.basicConfig(
         format=f"[rank={rank}] [%(asctime)s] %(levelname)s:%(message)s",
         level=logging.INFO,
     )
 
-    LOGGER.info(os.environ)
-    LOGGER.info(args)
-    LOGGER.info(f"local_rank={local_rank} rank={rank} world_size={world_size}")
+    LOGGER.debug(os.environ)
+    LOGGER.debug(args)
+    LOGGER.debug(f"local_rank={local_rank} rank={rank} world_size={world_size}")
 
-    device = torch.device(f"cuda:{local_rank}")
     dtype = torch.bfloat16
-    torch.cuda.set_device(device)
-
     torch.manual_seed(args.seed)
 
     # NOTE: assumes $HF_HOME is shared storage
-    with rank0_first():
+    with rank0_first(), device:
         config = AutoConfig.from_pretrained(args.model_name, use_cache=False)
-        with device:
-            model = AutoModelForCausalLM.from_config(config, torch_dtype=dtype)
-    LOGGER.info(f"{sum(p.numel() for p in model.parameters())} model parameters")
+        model = AutoModelForCausalLM.from_config(config, dtype=dtype)
+    LOGGER.info(
+        f"Training {sum(p.numel() for p in model.parameters())} model parameters"
+    )
 
     model = DistributedDataParallel(model, device_ids=[local_rank])
+    LOGGER.info(f"Initialized model uses {get_mem_stats(device)['curr_alloc_gb']}gb")
 
     # NOTE: Assumes that $HF_HOME is shared storage
     with rank0_first():
         train_data = _load_and_preprocess_data(args, config)
-    LOGGER.info(f"{len(train_data)} training samples")
+    LOGGER.debug(f"{len(train_data)} training samples")
 
     dataloader = DataLoader(
         train_data,
@@ -75,7 +75,7 @@ def main():
         # NOTE: this sampler will split dataset evenly across workers
         sampler=DistributedSampler(train_data, shuffle=True, drop_last=True),
     )
-    LOGGER.info(f"{len(dataloader)} batches per epoch")
+    LOGGER.debug(f"{len(dataloader)} batches per epoch")
 
     optimizer = ZeroRedundancyOptimizer(
         model.parameters(), optimizer_class=torch.optim.AdamW, lr=args.lr
@@ -84,7 +84,11 @@ def main():
         optimizer, T_max=1000, eta_min=args.lr * 1e-2
     )
 
-    exp_dir: Path = Path(args.save_dir) / args.experiment_name
+    is_experiment = False
+    exp_dir: Path = Path(args.save_dir)
+    if args.experiment_name is not None:
+        is_experiment = True
+        exp_dir = exp_dir / args.experiment_name
 
     # attempt resume
     state = {
@@ -94,7 +98,7 @@ def main():
         "running_loss": 0,
     }
     resumed = False
-    if (exp_dir / "state.json").exists():
+    if is_experiment and (exp_dir / "state.json").exists():
 
         def _load_to_device(p):
             return torch.load(p, map_location=device, weights_only=True)
@@ -108,7 +112,7 @@ def main():
     LOGGER.info(f"Resumed={resumed} | {state}")
     dist.barrier()
 
-    if rank == 0:
+    if is_experiment and rank == 0:
         LOGGER.info(f"Creating experiment root directory")
         exp_dir.mkdir(parents=True, exist_ok=True)
     dist.barrier()
@@ -177,7 +181,7 @@ def main():
                 for t in timers.values():
                     t.reset()
 
-            if state["global_step"] % args.ckpt_freq == 0:
+            if is_experiment and state["global_step"] % args.ckpt_freq == 0:
                 if rank == 0:
                     LOGGER.info("Saving checkpoint.")
                     torch.save(model.state_dict(), exp_dir / "model.pt")
@@ -196,7 +200,7 @@ def _load_and_preprocess_data(args, config):
     """
     tokenizer = AutoTokenizer.from_pretrained(args.model_name)
 
-    data = datasets.load_dataset(args.dataset_name, trust_remote_code=True)
+    data = datasets.load_dataset(args.dataset_name, args.dataset_subset)
 
     column_names = data["train"].column_names
     text_column_name = "text" if "text" in column_names else column_names[0]
@@ -299,8 +303,9 @@ class LocalTimer:
 
 def _get_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser()
-    parser.add_argument("-e", "--experiment-name", default=None, required=True)
+    parser.add_argument("-e", "--experiment-name", default=None)
     parser.add_argument("-d", "--dataset-name", default=None, required=True)
+    parser.add_argument("--dataset-subset", default=None)
     parser.add_argument("-m", "--model-name", default=None, required=True)
     parser.add_argument("--save-dir", default="../outputs")
     parser.add_argument("--seed", default=0, type=int)
