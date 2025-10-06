@@ -18,7 +18,6 @@ from torch.distributed.elastic.multiprocessing.errors import record
 import torch.distributed.checkpoint as DCP
 from torch.distributed._composable.fsdp import fully_shard
 
-import wandb
 import tqdm
 import datasets
 from transformers import (
@@ -197,22 +196,6 @@ def main():
         exp_dir.mkdir(parents=True, exist_ok=True)
     dist.barrier()
 
-    if rank == 0:
-        wandb.init(
-            project="distributed-training-guide",
-            dir=exp_dir,
-            name=args.experiment_name,
-            id=args.experiment_name,
-            resume="must" if resumed else None,
-            save_code=True,
-            config={
-                "args": vars(args),
-                "training_data_size": len(train_data),
-                "num_batches": len(dataloader),
-                "world_size": world_size,
-            },
-        )
-
     timers = {k: LocalTimer(device) for k in ["data", "forward", "backward", "update"]}
 
     for state["epoch"] in range(state["epoch"], args.num_epochs):
@@ -272,8 +255,6 @@ def main():
                 }
 
                 LOGGER.info(info)
-                if rank == 0:
-                    wandb.log(info, step=state["global_step"])
 
                 torch.cuda.reset_peak_memory_stats(device)
                 state["running_loss"] = 0

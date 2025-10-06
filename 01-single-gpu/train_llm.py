@@ -9,7 +9,6 @@ import logging
 
 import torch
 from torch.utils.data import DataLoader
-import wandb
 import tqdm
 import datasets
 from transformers import (
@@ -96,21 +95,6 @@ def main():
     LOGGER.info(f"Creating experiment root directory")
     exp_dir.mkdir(parents=True, exist_ok=True)
 
-    # Initializing [wandb](https://wandb.ai/) - a very useful experiment tracking library.
-    wandb.init(
-        project="distributed-training-guide",
-        dir=exp_dir,
-        name=args.experiment_name,
-        id=args.experiment_name,
-        resume="must" if resumed else None,
-        save_code=True,
-        config={
-            "args": vars(args),
-            "training_data_size": len(train_data),
-            "num_batches": len(dataloader),
-        },
-    )
-
     # will be using to understand breakdown of speed
     timers = {k: LocalTimer(device) for k in ["data", "forward", "backward", "update"]}
 
@@ -173,7 +157,6 @@ def main():
                 }
 
                 LOGGER.info(info)
-                wandb.log(info, step=state["global_step"])
 
                 torch.cuda.reset_peak_memory_stats(device)
                 state["running_loss"] = 0
