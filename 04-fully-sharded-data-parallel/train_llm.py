@@ -87,18 +87,18 @@ def main():
     for decoder in model.model.layers:
         fully_shard(decoder, **fsdp_config)
     fully_shard(model, **fsdp_config)
+    LOGGER.debug("Sharded model")
 
     model.to_empty(device=device)
-    def reset_params(m):
-        if hasattr(m, "reset_parameters"):
-            m.reset_parameters()
-
-    model.apply(reset_params)
-
     LOGGER.info(f"Initialized model uses {get_mem_stats(device)['curr_alloc_gb']}gb")
 
+    model.apply(
+        lambda m: m.reset_parameters() if hasattr(m, "reset_parameters") else None
+    )
+    LOGGER.debug("Reset model weights")
+
     model = torch.compile(model)
-    LOGGER.info("Compiled model")
+    LOGGER.debug("Compiled model")
 
     # NOTE: since this can download data, make sure to do the main process first
     # NOTE: This assumes that the data is on a **shared** network drive, accessible to all processes
@@ -120,7 +120,11 @@ def main():
         optimizer, T_max=1000, eta_min=args.lr * 1e-2
     )
 
-    exp_dir: Path = Path(args.save_dir) / args.experiment_name
+    is_experiment = False
+    exp_dir: Path = Path(args.save_dir)
+    if args.experiment_name is not None:
+        is_experiment = True
+        exp_dir = exp_dir / args.experiment_name
 
     # NOTE: full_state_dict=False means we will be saving sharded checkpoints.
     ckpt_opts = StateDictOptions(full_state_dict=False, cpu_offload=True)
@@ -133,7 +137,7 @@ def main():
         "running_loss": 0,
     }
     resumed = False
-    if (exp_dir / "state.json").exists():
+    if is_experiment and (exp_dir / "state.json").exists():
         sharded_model_state, sharded_optimizer_state = get_state_dict(
             model, optimizer, options=ckpt_opts
         )
@@ -159,17 +163,18 @@ def main():
     LOGGER.info(f"Resumed={resumed} | {state}")
     dist.barrier()
 
-    if (exp_dir.is_mount() and rank == 0) or (
+    if is_experiment and ((exp_dir.is_mount() and rank == 0) or (
         not exp_dir.is_mount() and local_rank == 0
-    ):
+    )):
         LOGGER.info(f"Creating experiment root directory")
         exp_dir.mkdir(parents=True, exist_ok=True)
     dist.barrier()
 
-    (exp_dir / f"rank-{rank}").mkdir(parents=True, exist_ok=True)
-    LOGGER.info(f"Worker saving to {exp_dir / f'rank-{rank}'}")
+    if is_experiment:
+        (exp_dir / f"rank-{rank}").mkdir(parents=True, exist_ok=True)
+        LOGGER.info(f"Worker saving to {exp_dir / f'rank-{rank}'}")
 
-    if rank == 0:
+    if is_experiment and rank == 0:
         wandb.init(
             project="distributed-training-guide",
             dir=exp_dir,
@@ -242,7 +247,7 @@ def main():
                 }
 
                 LOGGER.info(info)
-                if rank == 0:
+                if is_experiment and rank == 0:
                     wandb.log(info, step=state["global_step"])
 
                 torch.cuda.reset_peak_memory_stats(device)
@@ -250,7 +255,7 @@ def main():
                 for t in timers.values():
                     t.reset()
 
-            if state["global_step"] % args.ckpt_freq == 0:
+            if is_experiment and state["global_step"] % args.ckpt_freq == 0:
                 dist.barrier()
                 # NOTE: we have to call this on ALL ranks
                 sharded_model_state, sharded_optimizer_state = get_state_dict(
@@ -276,7 +281,7 @@ def _load_and_preprocess_data(args, config):
     """
     tokenizer = AutoTokenizer.from_pretrained(args.model_name)
 
-    data = datasets.load_dataset(args.dataset_name)
+    data = datasets.load_dataset(args.dataset_name, args.dataset_subset)
 
     column_names = data["train"].column_names
     text_column_name = "text" if "text" in column_names else column_names[0]
@@ -379,8 +384,9 @@ class LocalTimer:
 
 def _get_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser()
-    parser.add_argument("-e", "--experiment-name", default=None, required=True)
+    parser.add_argument("-e", "--experiment-name", default=None)
     parser.add_argument("-d", "--dataset-name", default=None, required=True)
+    parser.add_argument("--dataset-subset", default=None)
     parser.add_argument("-m", "--model-name", default=None, required=True)
     parser.add_argument("--save-dir", default="../outputs")
     parser.add_argument("--seed", default=0, type=int)
