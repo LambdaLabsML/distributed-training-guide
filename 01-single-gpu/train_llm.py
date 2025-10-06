@@ -43,10 +43,15 @@ def main():
     torch.manual_seed(args.seed)
 
     # Note: Initializing an **untrained** model
-    config = AutoConfig.from_pretrained(args.model_name, use_cache=False)
+    model: torch.nn.Module
     with device:
+        config = AutoConfig.from_pretrained(args.model_name, use_cache=False)
         model = AutoModelForCausalLM.from_config(config, dtype=dtype)
-    LOGGER.info(f"Training {sum(p.numel() for p in model.parameters())} model parameters")
+    LOGGER.info(
+        f"Training {sum(p.numel() for p in model.parameters())} model parameters"
+    )
+
+    LOGGER.info(f"Initialized model uses {get_mem_stats(device)['curr_alloc_gb']}gb")
 
     train_data = _load_and_preprocess_data(args, config)
     LOGGER.debug(f"{len(train_data)} training samples")
@@ -68,8 +73,11 @@ def main():
         optimizer, T_max=1000, eta_min=args.lr * 1e-2
     )
 
-    exp_dir: Path = Path(args.save_dir) / args.experiment_name
-    LOGGER.info(f"Experiment saving to {exp_dir}")
+    is_experiment = False
+    exp_dir: Path = Path(args.save_dir)
+    if args.experiment_name is not None:
+        is_experiment = True
+        exp_dir = exp_dir / args.experiment_name
 
     # attempt resume
     state = {
@@ -79,7 +87,7 @@ def main():
         "running_loss": 0,
     }
     resumed = False
-    if (exp_dir / "state.json").exists():
+    if is_experiment and (exp_dir / "state.json").exists():
         # NOTE: weights_only is to protect against arbitrary code execution with pickle decoding.
         def _load_to_device(p):
             return torch.load(p, map_location=device, weights_only=True)
@@ -92,8 +100,9 @@ def main():
         resumed = True
     LOGGER.info(f"Resumed={resumed} | {state}")
 
-    LOGGER.info(f"Creating experiment root directory")
-    exp_dir.mkdir(parents=True, exist_ok=True)
+    if is_experiment:
+        LOGGER.info(f"Creating experiment root directory")
+        exp_dir.mkdir(parents=True, exist_ok=True)
 
     # will be using to understand breakdown of speed
     timers = {k: LocalTimer(device) for k in ["data", "forward", "backward", "update"]}
@@ -163,7 +172,7 @@ def main():
                 for t in timers.values():
                     t.reset()
 
-            if state["global_step"] % args.ckpt_freq == 0:
+            if is_experiment and state["global_step"] % args.ckpt_freq == 0:
                 LOGGER.info("Saving checkpoint.")
                 torch.save(optimizer.state_dict(), exp_dir / "optimizer.pt")
                 torch.save(model.state_dict(), exp_dir / "model.pt")
@@ -181,7 +190,7 @@ def _load_and_preprocess_data(args, config):
     """
     tokenizer = AutoTokenizer.from_pretrained(args.model_name)
 
-    data = datasets.load_dataset(args.dataset_name, trust_remote_code=True)
+    data = datasets.load_dataset(args.dataset_name, args.dataset_subset)
 
     column_names = data["train"].column_names
     text_column_name = "text" if "text" in column_names else column_names[0]
@@ -273,8 +282,9 @@ class LocalTimer:
 
 def _get_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser()
-    parser.add_argument("-e", "--experiment-name", default=None, required=True)
+    parser.add_argument("-e", "--experiment-name", default=None)
     parser.add_argument("-d", "--dataset-name", default=None, required=True)
+    parser.add_argument("--dataset-subset", default=None)
     parser.add_argument("-m", "--model-name", default=None, required=True)
     parser.add_argument("--save-dir", default="../outputs")
     parser.add_argument("--seed", default=0, type=int)
