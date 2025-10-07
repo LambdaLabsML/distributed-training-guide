@@ -155,7 +155,8 @@ def main():
         with open(exp_dir / "state.json") as fp:
             state = json.load(fp)
         resumed = True
-    LOGGER.info(f"Resumed={resumed} | {state}")
+    if is_experiment:
+        LOGGER.info(f"Resumed={resumed} | {state}")
     dist.barrier()
 
     if is_experiment and (

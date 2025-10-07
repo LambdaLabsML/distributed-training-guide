@@ -27,6 +27,7 @@ from torch.distributed.checkpoint.state_dict import (
     set_model_state_dict,
 )
 from torch.distributed.checkpoint import load, save
+from torch.distributed.tensor import DTensor
 
 import tqdm
 import datasets
@@ -70,15 +71,37 @@ def main():
     LOGGER.debug(f"local_rank={local_rank} rank={rank} world size={world_size}")
     LOGGER.debug(f"Loading model from HF_HOME={os.getenv('HF_HOME')}")
 
-    # NOTE: meta device will not allocate any memory
-    model: torch.nn.Module
-    with rank_ordered(should_go_first=local_rank == 0), torch.device("meta"):
+    with rank0_first():
         config = AutoConfig.from_pretrained(args.model_name, use_cache=False)
-        model = AutoModelForCausalLM.from_config(config, dtype=dtype)
+
+    # Get the full state dict on rank 0 so we can broadcast it later
+    # with `set_model_state_dict()`
+    if rank == 0:
+        with torch.device("cpu"):
+            full_model = AutoModelForCausalLM.from_pretrained(
+                args.model_name,
+                dtype=dtype,
+                attn_implementation="flash_attention_2",
+                use_cache=False,
+            )
+            full_sd = full_model.state_dict()
+    else:
+        full_model = None
+        full_sd = {}
+
+    # initialize model on meta device on **ALL** ranks
+    model: torch.nn.Module
+    with torch.device("meta"):
+        model = AutoModelForCausalLM.from_config(
+            config,
+            dtype=dtype,
+            attn_implementation="flash_attention_2",
+        )
     LOGGER.info(
         f"Training {sum(p.numel() for p in model.parameters())} model parameters"
     )
 
+    # shard the models - nothing surprising here.
     fsdp_config = dict(
         reshard_after_forward=True,
         offload_policy=CPUOffloadPolicy() if args.cpu_offload == "on" else None,
@@ -92,7 +115,25 @@ def main():
     fully_shard(model, **fsdp_config)
     LOGGER.debug("Sharded model")
 
-    if args.layer_prefetching == "on":
+    # Once we've sharded the meta model, we can allocate the tensors
+    # and then load the model weights using the full_sd from rank 0
+    # NOTE that the model here is the same on ALL ranks (even rank 0).
+    # You might expect model on rank 0 to hold the weights,
+    # but that is not what the API expects.
+    model.to_empty(device=device)
+    set_model_state_dict(
+        model=model,
+        model_state_dict=full_sd,
+        options=StateDictOptions(
+            full_state_dict=True,
+            broadcast_from_rank0=True,
+        ),
+    )
+    del full_sd
+    del full_model
+    LOGGER.info(f"Initialized model uses {get_mem_stats(device)['curr_alloc_gb']}gb")
+
+    if args.prefetch_layers:
         num_prefetch = 1
         num_layers = len(model.model.layers)
         for i, layer in enumerate(model.model.layers):
@@ -111,17 +152,9 @@ def main():
                 ]
             )
 
-    model.to_empty(device=device)
-    LOGGER.info(f"Initialized model uses {get_mem_stats(device)['curr_alloc_gb']}gb")
-
-    model.apply(
-        lambda m: m.reset_parameters() if hasattr(m, "reset_parameters") else None
-    )
-    LOGGER.debug("Reset model weights")
-
     # Applying gradient checkpointing - note that only the LlamaDecoderLayer supports this,
     # so we can just reuse our existing wrap_policy.
-    if args.activation_checkpointing == "on":
+    if args.checkpoint_activations:
         from torch.nn import Embedding
         from transformers.models.llama.modeling_llama import LlamaDecoderLayer
 
@@ -136,13 +169,13 @@ def main():
         )
         LOGGER.info("Applied gradient checkpoint")
 
-    if args.model_compilation == "on":
+    if args.compile_model:
         model = torch.compile(model)
         LOGGER.info("Compiled model")
 
     # NOTE: since this can download data, make sure to do the main process first on each node
     # since we manually specified HF_HOME to be a node local drive.
-    with rank_ordered(should_go_first=local_rank == 0):
+    with rank0_first():
         train_data = _load_and_preprocess_data(args, config)
     LOGGER.debug(f"{len(train_data)} training samples")
 
@@ -202,7 +235,8 @@ def main():
         with open(exp_dir / "state.json") as fp:
             state = json.load(fp)
         resumed = True
-    LOGGER.info(f"Resumed={resumed} | {state}")
+    if is_experiment:
+        LOGGER.info(f"Resumed={resumed} | {state}")
     dist.barrier()
 
     if is_experiment and (
@@ -366,11 +400,12 @@ def get_mem_stats(device=None):
 
 
 @contextmanager
-def rank_ordered(*, should_go_first: bool):
-    if should_go_first:
+def rank0_first():
+    rank = dist.get_rank() % torch.cuda.device_count()
+    if rank == 0:
         yield
     dist.barrier()
-    if not should_go_first:
+    if rank > 0:
         yield
     dist.barrier()
 
@@ -419,11 +454,9 @@ def _get_parser() -> argparse.ArgumentParser:
     parser.add_argument("--ckpt-freq", default=500, type=int)
     parser.add_argument("-s", "--seq-length", default=1024, type=int)
     parser.add_argument("--cpu-offload", default="off", choices=["on", "off"])
-    parser.add_argument(
-        "--activation-checkpointing", default="off", choices=["on", "off"]
-    )
-    parser.add_argument("--layer-prefetching", default="off", choices=["on", "off"])
-    parser.add_argument("--model-compilation", default="off", choices=["on", "off"])
+    parser.add_argument("--checkpoint-activations", default=False, action="store_true")
+    parser.add_argument("--prefetch-layers", default=False, action="store_true")
+    parser.add_argument("--compile-model", default=False, action="store_true")
     return parser
 
 
