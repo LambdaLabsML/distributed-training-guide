@@ -9,7 +9,7 @@ args = parser.parse_args()
 
 os.environ["HF_HOME"] = os.path.expanduser("~/.cache/huggingface")
 
-model_name = "meta-llama/Meta-Llama-3.1-405B"
+model_name = "meta-llama/Llama-3.1-405B"
 
 print(f"Downloading {model_name} to $HF_HOME = {os.environ['HF_HOME']}.")
 

@@ -18,7 +18,12 @@ from torch.distributed.algorithms._checkpoint.checkpoint_wrapper import (
     checkpoint_wrapper,
 )
 from torch.distributed.elastic.multiprocessing.errors import record
-from torch.distributed.fsdp import fully_shard, CPUOffloadPolicy, MixedPrecisionPolicy
+from torch.distributed.fsdp import (
+    fully_shard,
+    CPUOffloadPolicy,
+    MixedPrecisionPolicy,
+    FSDPModule,
+)
 from torch.distributed.fsdp.wrap import transformer_auto_wrap_policy
 from torch.distributed.checkpoint.state_dict import (
     get_state_dict,
@@ -27,7 +32,6 @@ from torch.distributed.checkpoint.state_dict import (
     set_model_state_dict,
 )
 from torch.distributed.checkpoint import load, save
-from torch.distributed.tensor import DTensor
 
 import tqdm
 import datasets
@@ -71,27 +75,28 @@ def main():
     LOGGER.debug(f"local_rank={local_rank} rank={rank} world size={world_size}")
     LOGGER.debug(f"Loading model from HF_HOME={os.getenv('HF_HOME')}")
 
-    with rank0_first():
-        config = AutoConfig.from_pretrained(args.model_name, use_cache=False)
+    if args.cpu_offload:
+        # NOTE: the optimizer will run on CPU when using CPU offloading,
+        # so setting this will give us a little boost to that.
+        torch.set_num_threads(os.cpu_count() // (torch.cuda.device_count()))
 
     # Get the full state dict on rank 0 so we can broadcast it later
     # with `set_model_state_dict()`
     if rank == 0:
         with torch.device("cpu"):
             full_model = AutoModelForCausalLM.from_pretrained(
-                args.model_name,
-                dtype=dtype,
-                attn_implementation="flash_attention_2",
-                use_cache=False,
+                args.model_name, dtype=dtype
             )
             full_sd = full_model.state_dict()
     else:
         full_model = None
         full_sd = {}
+    dist.barrier()
 
     # initialize model on meta device on **ALL** ranks
     model: torch.nn.Module
-    with torch.device("meta"):
+    with rank0_first(), torch.device("meta"):
+        config = AutoConfig.from_pretrained(args.model_name, use_cache=False)
         model = AutoModelForCausalLM.from_config(
             config,
             dtype=dtype,
@@ -104,7 +109,7 @@ def main():
     # shard the models - nothing surprising here.
     fsdp_config = dict(
         reshard_after_forward=True,
-        offload_policy=CPUOffloadPolicy() if args.cpu_offload == "on" else None,
+        offload_policy=CPUOffloadPolicy() if args.cpu_offload else None,
         mp_policy=MixedPrecisionPolicy(
             param_dtype=torch.bfloat16,
             reduce_dtype=torch.float32,
@@ -115,18 +120,25 @@ def main():
     fully_shard(model, **fsdp_config)
     LOGGER.debug("Sharded model")
 
+    load_device = "cpu" if args.cpu_offload else device
+    model.to_empty(device=load_device)
+    dist.barrier()
+
+    LOGGER.info(
+        "Transferred model to device. Will now broadcast weights from rank 0..."
+    )
     # Once we've sharded the meta model, we can allocate the tensors
     # and then load the model weights using the full_sd from rank 0
     # NOTE that the model here is the same on ALL ranks (even rank 0).
     # You might expect model on rank 0 to hold the weights,
     # but that is not what the API expects.
-    model.to_empty(device=device)
     set_model_state_dict(
         model=model,
         model_state_dict=full_sd,
         options=StateDictOptions(
             full_state_dict=True,
             broadcast_from_rank0=True,
+            cpu_offload=args.cpu_offload,
         ),
     )
     del full_sd
@@ -134,22 +146,19 @@ def main():
     LOGGER.info(f"Initialized model uses {get_mem_stats(device)['curr_alloc_gb']}gb")
 
     if args.prefetch_layers:
+        decoders = model.model.layers
         num_prefetch = 1
-        num_layers = len(model.model.layers)
-        for i, layer in enumerate(model.model.layers):
+        layer: FSDPModule
+        for i, layer in enumerate(decoders):
             layer.set_modules_to_forward_prefetch(
                 [
-                    model.model.layers[i + j]
+                    decoders[i + j]
                     for j in range(1, num_prefetch + 1)
-                    if i + j < num_layers
+                    if i + j < len(decoders)
                 ]
             )
             layer.set_modules_to_backward_prefetch(
-                [
-                    model.model.layers[i - j]
-                    for j in range(1, num_prefetch + 1)
-                    if i - j >= 0
-                ]
+                [decoders[i - j] for j in range(1, num_prefetch + 1) if i - j >= 0]
             )
 
     # Applying gradient checkpointing - note that only the LlamaDecoderLayer supports this,
@@ -277,7 +286,7 @@ def main():
             with timers["update"]:
                 optimizer.step()
                 lr_scheduler.step()
-                optimizer.zero_grad(set_to_none=args.cpu_offload == "off")
+                optimizer.zero_grad(set_to_none=args.cpu_offload)
 
             state["global_step"] += 1
             state["epoch_step"] += 1
@@ -453,7 +462,7 @@ def _get_parser() -> argparse.ArgumentParser:
     parser.add_argument("--log-freq", default=100, type=int)
     parser.add_argument("--ckpt-freq", default=500, type=int)
     parser.add_argument("-s", "--seq-length", default=1024, type=int)
-    parser.add_argument("--cpu-offload", default="off", choices=["on", "off"])
+    parser.add_argument("--cpu-offload", default=False, action="store_true")
     parser.add_argument("--checkpoint-activations", default=False, action="store_true")
     parser.add_argument("--prefetch-layers", default=False, action="store_true")
     parser.add_argument("--compile-model", default=False, action="store_true")
