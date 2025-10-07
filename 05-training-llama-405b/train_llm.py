@@ -57,6 +57,9 @@ def main():
     torch.cuda.set_device(device)
     dist.init_process_group(rank=rank, world_size=world_size, device_id=device)
 
+    dtype = torch.bfloat16
+    torch.manual_seed(args.seed)
+
     logging.basicConfig(
         format=f"[rank={rank}] [%(asctime)s] %(levelname)s:%(message)s",
         level=logging.INFO,
@@ -65,31 +68,13 @@ def main():
     LOGGER.debug(os.environ)
     LOGGER.debug(args)
     LOGGER.debug(f"local_rank={local_rank} rank={rank} world size={world_size}")
+    LOGGER.debug(f"Loading model from HF_HOME={os.getenv('HF_HOME')}")
 
-    dtype = torch.bfloat16
-    torch.manual_seed(args.seed)
-
-    LOGGER.info(f"Loading model from HF_HOME={os.getenv('HF_HOME')}")
-
+    # NOTE: meta device will not allocate any memory
     model: torch.nn.Module
-    with rank_ordered(should_go_first=local_rank == 0):
+    with rank_ordered(should_go_first=local_rank == 0), torch.device("meta"):
         config = AutoConfig.from_pretrained(args.model_name, use_cache=False)
-
-    if rank == 0:
-        with torch.device("cpu"):
-            model = AutoModelForCausalLM.from_pretrained(
-                args.model_name,
-                dtype=dtype,
-                attn_implementation="flash_attention_2",
-                use_cache=False,
-            )
-    else:
-        with torch.device("meta"):
-            model = AutoModelForCausalLM.from_config(
-                config,
-                dtype=dtype,
-                attn_implementation="flash_attention_2",
-            )
+        model = AutoModelForCausalLM.from_config(config, dtype=dtype)
     LOGGER.info(
         f"Training {sum(p.numel() for p in model.parameters())} model parameters"
     )
@@ -129,15 +114,10 @@ def main():
     model.to_empty(device=device)
     LOGGER.info(f"Initialized model uses {get_mem_stats(device)['curr_alloc_gb']}gb")
 
-    set_model_state_dict(
-        model,
-        model.state_dict(),
-        options=StateDictOptions(
-            full_state_dict=True,
-            broadcast_from_rank0=True,
-        ),
+    model.apply(
+        lambda m: m.reset_parameters() if hasattr(m, "reset_parameters") else None
     )
-    LOGGER.info("Loaded pretrained model weights")
+    LOGGER.debug("Reset model weights")
 
     # Applying gradient checkpointing - note that only the LlamaDecoderLayer supports this,
     # so we can just reuse our existing wrap_policy.
@@ -377,11 +357,11 @@ def get_mem_stats(device=None):
     mem = torch.cuda.memory_stats(device)
     props = torch.cuda.get_device_properties(device)
     return {
-        "total_mem_in_gb": 1e-9 * props.total_memory,
-        "curr_alloc_in_gb": 1e-9 * mem["allocated_bytes.all.current"],
-        "peak_alloc_in_gb": 1e-9 * mem["allocated_bytes.all.peak"],
-        "curr_resv_in_gb": 1e-9 * mem["reserved_bytes.all.current"],
-        "peak_resv_in_gb": 1e-9 * mem["reserved_bytes.all.peak"],
+        "total_gb": 1e-9 * props.total_memory,
+        "curr_alloc_gb": 1e-9 * mem["allocated_bytes.all.current"],
+        "peak_alloc_gb": 1e-9 * mem["allocated_bytes.all.peak"],
+        "curr_resv_gb": 1e-9 * mem["reserved_bytes.all.current"],
+        "peak_resv_gb": 1e-9 * mem["reserved_bytes.all.peak"],
     }
 
 
@@ -438,10 +418,12 @@ def _get_parser() -> argparse.ArgumentParser:
     parser.add_argument("--log-freq", default=100, type=int)
     parser.add_argument("--ckpt-freq", default=500, type=int)
     parser.add_argument("-s", "--seq-length", default=1024, type=int)
-    parser.add_argument("--cpu-offload", default="on", choices=["on", "off"])
-    parser.add_argument("--activation-checkpointing", default="on", choices=["on", "off"])
-    parser.add_argument("--layer-prefetching", default="on", choices=["on", "off"])
-    parser.add_argument("--model-compilation", default="on", choices=["on", "off"])
+    parser.add_argument("--cpu-offload", default="off", choices=["on", "off"])
+    parser.add_argument(
+        "--activation-checkpointing", default="off", choices=["on", "off"]
+    )
+    parser.add_argument("--layer-prefetching", default="off", choices=["on", "off"])
+    parser.add_argument("--model-compilation", default="off", choices=["on", "off"])
     return parser
 
 
