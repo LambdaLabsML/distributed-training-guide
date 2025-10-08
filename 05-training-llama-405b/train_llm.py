@@ -110,10 +110,7 @@ def main():
     fsdp_config = dict(
         reshard_after_forward=True,
         offload_policy=CPUOffloadPolicy() if args.cpu_offload else None,
-        mp_policy=MixedPrecisionPolicy(
-            param_dtype=torch.bfloat16,
-            reduce_dtype=torch.float32,
-        ),
+        mp_policy=MixedPrecisionPolicy(param_dtype=dtype, reduce_dtype=torch.float32),
     )
     for decoder in model.model.layers:
         fully_shard(decoder, **fsdp_config)
@@ -141,6 +138,20 @@ def main():
             cpu_offload=args.cpu_offload,
         ),
     )
+
+    # unfortunately `full_model.state_dict()`` won't contain
+    # non-persistent buffers (i.e. `self.register_buffer(..., persistent=False)`),
+    # so we have to manually broadcast them from `full_model` ourselves
+    if rank == 0:
+        for weight, buffer in zip(full_model.buffers(), model.buffers()):
+            buffer.copy_(weight)
+            dist.broadcast(buffer.to(device), src=0)
+    else:
+        for buffer in model.buffers():
+            device_buffer = buffer.to(device)
+            dist.broadcast(device_buffer, src=0)
+            buffer.copy_(device_buffer.to(buffer.device))
+
     del full_sd
     del full_model
     LOGGER.info(f"Initialized model uses {get_mem_stats(device)['curr_alloc_gb']}gb")
@@ -320,7 +331,7 @@ def main():
                 for t in timers.values():
                     t.reset()
 
-            if state["global_step"] % args.ckpt_freq == 0:
+            if is_experiment and state["global_step"] % args.ckpt_freq == 0:
                 LOGGER.info("Saving checkpoint.")
                 dist.barrier()
                 # NOTE: we have to call this on ALL ranks
