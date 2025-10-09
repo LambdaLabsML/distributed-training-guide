@@ -85,7 +85,6 @@ def main():
     dist.barrier()
 
     # initialize model on meta device on **ALL** ranks
-    model: torch.nn.Module
     with rank0_first(), torch.device("meta"):
         config = AutoConfig.from_pretrained(args.model_name, use_cache=False)
         model = AutoModelForCausalLM.from_config(
@@ -99,17 +98,13 @@ def main():
 
     # shard the models - nothing surprising here.
     fsdp_config = dict(
-        reshard_after_forward=True,
         offload_policy=CPUOffloadPolicy() if args.cpu_offload else None,
         mp_policy=MixedPrecisionPolicy(param_dtype=dtype, reduce_dtype=torch.float32),
     )
     for decoder in model.model.layers:
-        fully_shard(decoder, **fsdp_config)
-    fully_shard(model, **fsdp_config)
-    LOGGER.debug("Sharded model")
-
-    load_device = "cpu" if args.cpu_offload else device
-    model.to_empty(device=load_device)
+        fully_shard(decoder, reshard_after_forward=True, **fsdp_config)
+    fully_shard(model, reshard_after_forward=False, **fsdp_config)
+    model.to_empty(device="cpu" if args.cpu_offload else device)
     dist.barrier()
 
     LOGGER.info(
@@ -274,6 +269,9 @@ def main():
         batches = iter(dataloader)
 
         for i_step in range(len(dataloader)):
+            # NOTE: prefetches the first layer
+            model.unshard()
+
             with timers["data"], torch.no_grad():
                 batch = next(batches)
                 batch = {k: v.to(device=device) for k, v in batch.items()}
@@ -282,15 +280,12 @@ def main():
                 # NOTE: for resuming
                 continue
 
-            torch.cuda.empty_cache()
             with timers["forward"]:
                 outputs = model(**batch)
 
-            torch.cuda.empty_cache()
             with timers["backward"]:
                 outputs.loss.backward()
 
-            torch.cuda.empty_cache()
             with timers["update"]:
                 optimizer.step()
                 lr_scheduler.step()

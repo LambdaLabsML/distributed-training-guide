@@ -106,7 +106,6 @@ def main():
                 "mlp.down_proj": tp.RowwiseParallel(output_layouts=Shard(1)),
             },
         )
-
     tp.parallelize_module(
         model,
         mesh["tp"],
@@ -114,21 +113,18 @@ def main():
             "model.norm": tp.SequenceParallel(),
             "lm_head": tp.ColwiseParallel(
                 input_layouts=Shard(1),
-                output_layouts=Shard(-1),  # for tp.loss_parallel
-                use_local_output=False,  # for tp.loss_parallel
+                output_layouts=Replicate(),
             ),
         },
     )
 
-    fsdp_config = dict(reshard_after_forward=True, mesh=mesh["dp"])
     for layer in model.model.layers:
-        fully_shard(layer, **fsdp_config)
-    fully_shard(model, **fsdp_config)
-
-    model = model.to_empty(device=device)
-    model.init_weights()
-    model.train()
+        fully_shard(layer, reshard_after_forward=True, mesh=mesh["dp"])
+    fully_shard(model, reshard_after_forward=False, mesh=mesh["dp"])
     LOGGER.info(f"Initialized model uses {get_mem_stats(device)['curr_alloc_gb']}gb")
+
+    model = torch.compile(model)
+    model.loss_function = torch.compile(model.loss_function)
 
     # NOTE: since this can download data, make sure to do the main process first on each node
     # since we manually specified HF_HOME to be a node local drive.
@@ -208,6 +204,9 @@ def main():
         batches = iter(dataloader)
 
         for i_step in range(len(dataloader)):
+            # NOTE: prefetches the first layer
+            model.unshard()
+
             with timers["data"], torch.no_grad():
                 batch = next(batches)
                 batch = {k: v.to(device=device) for k, v in batch.items()}
@@ -219,10 +218,10 @@ def main():
                 # NOTE: for resuming
                 continue
 
-            with tp.loss_parallel(), timers["forward"]:
+            with timers["forward"]:
                 outputs = model(**batch)
 
-            with tp.loss_parallel(), timers["backward"]:
+            with timers["backward"]:
                 outputs.loss.backward()
 
             with timers["update"]:

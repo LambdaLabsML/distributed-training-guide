@@ -16,23 +16,6 @@ What this means:
 
 Sharding is a **data parallel** technique! **NOT** a model/tensor/pipeline parallel technique.
 
-- [PyTorch FullyShardedDataParallel (FSDP)](#pytorch-fullyshardeddataparallel-fsdp)
-  - [Initialization **after** sharding - the `meta` device](#initialization-after-sharding---the-meta-device)
-  - [The FSDP Constructor](#the-fsdp-constructor)
-    - [Parameter initialization (when using the `meta` device) - `param_init_fn`](#parameter-initialization-when-using-the-meta-device---param_init_fn)
-    - [reset\_parameters()](#reset_parameters)
-    - [Loading a checkpoint](#loading-a-checkpoint)
-    - [sync\_module\_states](#sync_module_states)
-    - [What layers to shard - the `auto_wrap_policy`](#what-layers-to-shard---the-auto_wrap_policy)
-    - [What to shard - `sharding_strategy`](#what-to-shard---sharding_strategy)
-    - [CPU Offload](#cpu-offload)
-  - [Sharded Checkpoints](#sharded-checkpoints)
-- [Run Command](#run-command)
-- [Examples of memory usage with different configurations](#examples-of-memory-usage-with-different-configurations)
-   - [meta-llama/Llama-2-7B-hf](#meta-llamallama-2-7b-hf)
-   - [meta-llama/Llama-2-70B-hf](#meta-llamallama-2-70b-hf)
-
-
 ## PyTorch FullyShardedDataParallel (FSDP)
 
 <img width="667" alt="image" src="https://github.com/user-attachments/assets/64e01efb-dd47-4667-b5bc-0ad623c8cdd3">
@@ -60,106 +43,83 @@ References:
 - [FSDP Docs](https://pytorch.org/docs/stable/fsdp.html)
 - [FSDP Tutorial](https://pytorch.org/tutorials/intermediate/FSDP_tutorial.html).
 
-### Initialization **after** sharding - the `meta` device
+### Delayed initialization - the `meta` device
 
 [meta device docs](https://pytorch.org/docs/stable/meta.html)
 
-This is useful because the meta device does not allocate any memory at all! It makes model initialization extremely fast. You can actually run a lot of the ops with the meta device as well, only the shape will be modified.
-
-This is useful when training large models when we don't want to actually initialize the fully model in memory on each device. We can then use this meta model in conjuction with the FSDP constructor to only initialize the model weights **after** the model has been sharded across the GPUs.
+The meta device does not allocate any memory at all! It makes model initialization extremely fast. It's used for FSDP because we don't want to initialize weights until after the sharding happens.
 
 ```python
 with torch.device("meta"):
     model = AutoModelForCausalLM.from_config(config, dtype=dtype)
 ```
 
-### The FSDP Constructor
+### Sharding the meta model
 
-Here is our [FSDP constructor](https://pytorch.org/docs/stable/fsdp.html#torch.distributed.fsdp.FullyShardedDataParallel), let's explore each of these arguments in more detail. ALL of the options here have an impact on throughput, memory usage, and peak memory usage.
+To do this we will the fsdp2 api from pytorch: [fully_shard()](https://docs.pytorch.org/docs/main/distributed.fsdp.fully_shard.html).
+
+This basically splits our model (still on the meta device) across all of our GPUs.
 
 ```python
-model = FullyShardedDataParallel(
-    model,
-    device_id=local_rank,
-    sync_module_states=True,
-    auto_wrap_policy=wrap_policy,
-    sharding_strategy=ShardingStrategy.FULL_SHARD,
-    cpu_offload=CPUOffload(offload_params=args.cpu_offload == "on"),
+fsdp_config = dict(
+    reshard_after_forward=True,
+    offload_policy=CPUOffloadPolicy() if args.cpu_offload else None,
+)
+for decoder in model.model.layers:
+    fully_shard(decoder, **fsdp_config)
+fully_shard(model, **fsdp_config)
+```
+
+An important note here is that we are applying sharding at the **decoder layer level**. What implications does this have?
+
+**`fully_shard()` inserts an all-gather where you put it**.
+
+So we are saying there should be an all-gather of each decoder layer right before it executes. If you want the all-gathers to happen at a different place, you will need to apply `fully_shard()` differently.
+
+#### When parameters are "resharded"
+
+As the graphic at the top shows, typically parameters are resharded right after the forward pass completes. This is standard because it saves us more GPU memory through the forward pass.
+
+If we set `reshard_after_forward=False`, we don't actually reshard things until after the backwards pass completes.
+
+#### CPU Offload
+
+From the [CPUOffloadPolicy docs](https://docs.pytorch.org/docs/stable/distributed.fsdp.fully_shard.html#torch.distributed.fsdp.CPUOffloadPolicy):
+
+> This offload policy offloads parameters, gradients, and optimizer states to CPU.
+
+This option **heavily** reduces memory requirements - at the cost of a lot of compute and memory bandwidth. The forward & backward pass runs on the GPU, then gradients are offloaded to CPU and the optimizer runs on the CPU:
+
+> Sharded gradients are copied device-to-host in backward, and the **optimizer.step() runs on CPU** with CPU optimizer states.
+
+Note that this option will **NOT reduce peak GPU memory requirements** - each layer will still be fully executed in the GPU. However there may be more memory for each layer to use as more memory is stored in the CPU.
+
+### Initializing the model
+
+First we allocate the memory with `to_empty` and then we reset all the parameters with the standard `reset_parameters()`
+
+```python
+model.to_empty(device="cpu" if args.cpu_offload else device)
+model.apply(
+    lambda m: m.reset_parameters() if hasattr(m, "reset_parameters") else None
 )
 ```
 
-#### Parameter initialization (when using the `meta` device) - `param_init_fn`
-
-##### reset_parameters()
-
-In most cases, if you just want to apply `reset_parameters()` - you actually don't have to specify this parameter. However some models (e.g. Llama 2/3.1) have modules that do not implement `reset_parameters()`. 
-
-It is suggested that you implement them manually. Here is what we do for our llama models:
+Note that some modules like RotaryEmbedding have buffers and not parameters. These will get deallocated with `to_empty()` but not reset with `reset_parameters()`. You'll have to handle these manually:
 
 ```python
 from transformers.models.llama.modeling_llama import LlamaRMSNorm, LlamaRotaryEmbedding
 
-# fixes for reset_parameters not existing
+def reset_rope(self: LlamaRotaryEmbedding):
+    self.inv_freq, self.attention_scaling = self.rope_init_fn(
+        self.config, self.inv_freq.device
+    )
+    self.original_inv_freq = self.inv_freq
+
+
 LlamaRMSNorm.reset_parameters = lambda self: torch.nn.init.ones_(self.weight)
-LlamaRotaryEmbedding.reset_parameters = lambda _: None
+LlamaRotaryEmbedding.reset_parameters = reset_rope
 ```
-
-##### Loading a checkpoint
-
-The recommended way to perform this is to load the checkpoint onto a single rank (e.g. rank 0), and then use the `sync_module_states=True` to synchronize all the shards.
-
-Loading a checkpoint heavily depends on what library you use. If you are using transformers, you can specify a device map to ensure large models can be stored in a combination of disk/cpu/gpu memory on a single rank.
-
-#### sync_module_states
-
-To quote the docs on this:
-
-> If True, then each FSDP module will broadcast module parameters and buffers from rank 0 to ensure that they are replicated across ranks (adding communication overhead to this constructor). This can help load state_dict checkpoints via load_state_dict in a memory efficient way. See FullStateDictConfig for an example of this.
-
-#### What layers to shard - the `auto_wrap_policy`
-
-By default if you don't specify an auto_wrap_policy, FSDP will be equivalent to DDP. So you need to specify this!
-
-Basically anything that is wrapped by FSDP will be sharded. The `auto_wrap_policy` takes a module and returns a boolean about whether to wrap it.
-
-In this chapter we use the [size_based_auto_wrap_policy](https://github.com/pytorch/pytorch/blob/v2.4.0/torch/distributed/fsdp/wrap.py#L349) in torch.distributed.fsdp.wrap.py, which applies FSDP to a module if the parameters in its subtree exceed 100M numel.
-
-We expose this onto the cli via the argument `--numel-to-wrap`
-
-```python
-import functools
-from torch.distributed.fsdp.wrap import size_based_auto_wrap_policy
-
-auto_wrap_policy = functools.partial(
-    size_based_auto_wrap_policy, min_num_params=int(args.numel_to_wrap)
-)
-```
-
-There are other provided wrap policies, like [transformer_auto_wrap_policy](https://github.com/pytorch/pytorch/blob/v2.4.0/torch/distributed/fsdp/wrap.py#L306) which can wrap specific classes.
-
-#### What to shard - `sharding_strategy`
-
-[ShardingStrategy docs](https://pytorch.org/docs/stable/fsdp.html#torch.distributed.fsdp.ShardingStrategy)
-
-FSDP fully implements everything you can do with deepspeed! Here's how the stages align:
-
-| FSDP ShardingStrategy | DeepSpeed ZeRO Stage | Shard Optimizer states | Shard Gradients | Shard Parameters |
-| --------------------- | -------------------- | ---------------------- | --------------- | ---------------- |
-| `FULL_SHARD`          | 3                    | ✅                      | ✅               | ✅                |
-| `SHARD_GRAD_OP`       | 2                    | ✅                      | ✅               | ❌                |
-| `NO_SHARD`  (DDP)     | 0                    | ❌                      | ❌               | ❌                |
-| `HYBRID_SHARD`        | ZeRO++ 3             | ✅ (intra-node)         | ✅ (intra-node)  | ✅ (intra-node)   |
-
-
-#### CPU Offload
-
-[CPUOffload docs](https://pytorch.org/docs/stable/fsdp.html#torch.distributed.fsdp.CPUOffload)
-
-> If True, then this offloads gradients to CPU as well, meaning that the optimizer step runs on CPU.
-
-This option **heavily** reduces memory requirements - at the cost of a lot of compute and memory bandwidth. The forward & backward pass runs on the GPU, then gradients are offloaded to CPU and the optimizer runs on the CPU.
-
-Note that this option will **NOT reduce peak GPU memory requirements** - each layer will still be fully executed in the GPU. However there may be more memory for each layer to use as more memory is stored in the CPU.
 
 ### Sharded Checkpoints
 
@@ -256,127 +216,11 @@ cd distributed-training-guide/04-sharding-fsdp
 export TORCHELASTIC_ERROR_FILE=../error.json
 export OMP_NUM_THREADS=1
 export HF_HOME=../.cache
-torchrun --standalone \
-    --nnodes 1 \
-    --nproc-per-node gpu \
+torchrun --nproc-per-node gpu \
     --redirects 3 \
     --log-dir ../logs \
     train_llm.py \
-    --experiment-name fsdp \
-    --dataset-name tatsu-lab/alpaca \
-    --model-name openai-community/gpt2 \
-    --cpu-offload on
+    -d tatsu-lab/alpaca \
+    -m openai-community/gpt2 \
+    --cpu-offload
 ```
-
-## Examples of memory usage with different configurations
-
-* `peak GPU memory`: The highest GPU memory allocated *at any point* during a single training loop iteration (*during* forward/backward/step)
-* `valley GPU memory`: The GPU memory allocated at the end of a single training loop iteration (*after* forward/backward/step)
-
-#### meta-llama/Llama-2-7B-hf
-
-| GPUs          | --numel-to-wrap | --cpu-offload | --batch-size | valley/peak GPU memory (per GPU) |
-| ------------- | --------------- | ------------- | ------------ | -------------------------------- |
-| 8xA100 (80GB) | 100_000_000     | off           | 10           | 8GB / 74GB                       |
-| 8xA100 (80GB) | 100_000_000     | **on**        | 10           | 1.4GB / 68.7GB                   |
-
-<details>
-    <summary>Wrapped model architecture</summary>
-    
-    ```python
-    FullyShardedDataParallel(
-      (_fsdp_wrapped_module): LlamaForCausalLM(
-        (model): FullyShardedDataParallel(
-          (_fsdp_wrapped_module): LlamaModel(
-            (embed_tokens): FullyShardedDataParallel(
-              (_fsdp_wrapped_module): Embedding(32000, 4096)
-            )
-            (layers): ModuleList(
-              (0-31): 32 x LlamaDecoderLayer(
-                (self_attn): LlamaSdpaAttention(
-                  (q_proj): Linear(in_features=4096, out_features=4096, bias=False)
-                  (k_proj): Linear(in_features=4096, out_features=4096, bias=False)
-                  (v_proj): Linear(in_features=4096, out_features=4096, bias=False)
-                  (o_proj): Linear(in_features=4096, out_features=4096, bias=False)
-                  (rotary_emb): LlamaRotaryEmbedding()
-                )
-                (mlp): FullyShardedDataParallel(
-                  (_fsdp_wrapped_module): LlamaMLP(
-                    (gate_proj): Linear(in_features=4096, out_features=11008, bias=False)
-                    (up_proj): Linear(in_features=4096, out_features=11008, bias=False)
-                    (down_proj): Linear(in_features=11008, out_features=4096, bias=False)
-                    (act_fn): SiLU()
-                  )
-                )
-                (input_layernorm): LlamaRMSNorm((4096,), eps=1e-05)
-                (post_attention_layernorm): LlamaRMSNorm((4096,), eps=1e-05)
-              )
-            )
-            (norm): LlamaRMSNorm((4096,), eps=1e-05)
-            (rotary_emb): LlamaRotaryEmbedding()
-          )
-        )
-        (lm_head): FullyShardedDataParallel(
-          (_fsdp_wrapped_module): Linear(in_features=4096, out_features=32000, bias=False)
-        )
-      )
-    )
-    ```
-</details>
-
-#### meta-llama/Llama-2-70B-hf
-
-We actually **need** to use `--cpu-offload on` in this case - we can fit the model in memory, but the forward/backward/step passes don't fit, even with batch size 1.
-
-| GPUs          | --numel-to-wrap | --cpu-offload | --batch-size | valley/peak GPU memory (per GPU) |
-| ------------- | --------------- | ------------- | ------------ | -------------------------------- |
-| 8xA100 (80GB) | 100_000_000     | on            | 2            | 0.3GB / 72.3 GB                  |
-
-
-<details>
-    <summary>Wrapped model architecture</summary>
-
-    ```python
-    FullyShardedDataParallel(
-      (_fsdp_wrapped_module): LlamaForCausalLM(
-        (model): LlamaModel(
-          (embed_tokens): FullyShardedDataParallel(
-            (_fsdp_wrapped_module): Embedding(32000, 8192)
-          )
-          (layers): ModuleList(
-            (0-79): 80 x LlamaDecoderLayer(
-              (self_attn): FullyShardedDataParallel(
-                (_fsdp_wrapped_module): LlamaSdpaAttention(
-                  (q_proj): Linear(in_features=8192, out_features=8192, bias=False)
-                  (k_proj): Linear(in_features=8192, out_features=1024, bias=False)
-                  (v_proj): Linear(in_features=8192, out_features=1024, bias=False)
-                  (o_proj): Linear(in_features=8192, out_features=8192, bias=False)
-                  (rotary_emb): LlamaRotaryEmbedding()
-                )
-              )
-              (mlp): LlamaMLP(
-                (gate_proj): FullyShardedDataParallel(
-                  (_fsdp_wrapped_module): Linear(in_features=8192, out_features=28672, bias=False)
-                )
-                (up_proj): FullyShardedDataParallel(
-                  (_fsdp_wrapped_module): Linear(in_features=8192, out_features=28672, bias=False)
-                )
-                (down_proj): FullyShardedDataParallel(
-                  (_fsdp_wrapped_module): Linear(in_features=28672, out_features=8192, bias=False)
-                )
-                (act_fn): SiLU()
-              )
-              (input_layernorm): LlamaRMSNorm((8192,), eps=1e-05)
-              (post_attention_layernorm): LlamaRMSNorm((8192,), eps=1e-05)
-            )
-          )
-          (norm): LlamaRMSNorm((8192,), eps=1e-05)
-          (rotary_emb): LlamaRotaryEmbedding()
-        )
-        (lm_head): FullyShardedDataParallel(
-          (_fsdp_wrapped_module): Linear(in_features=8192, out_features=32000, bias=False)
-        )
-      )
-    )
-    ```
-</details>

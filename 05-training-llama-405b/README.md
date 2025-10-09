@@ -69,57 +69,99 @@ cd distributed-training-guide/05-training-llama-405b
 python download.py --skip-model
 ```
 
-NOTE: you will likely have to log into your huggingface account using `huggingface-cli login`.
+NOTE: you will likely have to log into your huggingface account using `hf auth login`.
 
 ## Loading pretrained weights
 
-When we actual load the weights, it will take some time AND takes a lot of memory to load. Again the full size is about 764 GB, so we need to make sure we have enough RAM to store the weights.
+### Load the model into CPU RAM
 
-There's three parts to this:
-
-1. Loading the weights into RAM only on `rank==0`
-2. Using the [meta](../04-fully-sharded-data-parallel/README.md#initialization-after-sharding---the-meta-device) device on `rank>0`
-3. Using `from_config` instead of `from_pretrained` on `rank>0` so we don't need to download the weights on all the nodes.
-   1. Note that if you have the weights on a shared network drive, you can just use `from_pretrained` instead.
-4. Enabling [sync_module_states](../04-fully-sharded-data-parallel/README.md#sync_module_states) in FSDP constructor
-
-You might think of using the `device_map` feature of `transformers` - e.g. `device_map="auto"` tries to smartly fill up memory. However if you try this approach you'll end up with out of memory errors when FSDP tries to start sending memory to the GPU.
-
-Here's our code snippet for doing this:
+First we load the full model into CPU RAM on __rank 0__. We will use this later to broadcast all weights to all ranks. Note that we use `from_pretrained()`.
 
 ```python
 if rank == 0:
     with torch.device("cpu"):
-        model = AutoModelForCausalLM.from_pretrained(...)
+        full_model = AutoModelForCausalLM.from_pretrained(
+            args.model_name, dtype=dtype
+        )
+        full_sd = full_model.state_dict()
 else:
-    with torch.device("meta"):
-        model = AutoModelForCausalLM.from_config(config, dtype=dtype)
+    full_model = None
+    full_sd = {}
+dist.barrier()
 ```
 
-Then later, sync_module_states in [FSDP constructor](../04-fully-sharded-data-parallel/README.md#the-fsdp-constructor) will make sure the weights are broadcasted from rank 0 to the other ranks.
+When we actual load the weights, it will take some time AND takes a lot of memory to load. The full size is about 764 GB, so we need to make sure we have enough RAM to store the weights.
 
-## Sharding Llama 405B
+### Initialize meta models on all ranks
 
-Determining what layers you should shard is complex. If you are using `transformers`, they include a private attribute on classes called [_no_split_modules](https://github.com/huggingface/transformers/blob/v4.45.1/src/transformers/models/llama/modeling_llama.py#L784) that will contain classes that you should not shard anything under them. E.g. for Llama this attribute just contains `LlamaDecoderLayer`. So that is what we will wrap! During testing I also found that sharding the `nn.Embedding` layer at the beginning of the network improved throughput and reduced memory usage.
-
-We can use the [transformer_auto_wrap_policy()](https://github.com/pytorch/pytorch/blob/main/torch/distributed/fsdp/wrap.py#L307C5-L307C33) to target the specific classes for those layers, and pass that as our [auto_wrap_policy in the FSDP constructor](../04-fully-sharded-data-parallel/README.md#what-layers-to-shard---the-auto_wrap_policy):
+For the actual models that we will be sharding we will initialize them with the `meta` model. This is for compatibility with the `set_model_state_dict()` api we will use shortly:
 
 ```python
-from torch.distributed.fsdp.wrap import transformer_auto_wrap_policy
-from transformers.models.llama.modeling_llama import LlamaDecoderLayer
-
-wrap_policy = functools.partial(
-    transformer_auto_wrap_policy,
-    transformer_layer_cls={LlamaDecoderLayer, nn.Embedding},
-)
-FSDP(..., auto_wrap_policy=wrap_policy)
+with rank0_first(), torch.device("meta"):
+    config = AutoConfig.from_pretrained(args.model_name, use_cache=False)
+    model = AutoModelForCausalLM.from_config(
+        config,
+        dtype=dtype,
+        attn_implementation="flash_attention_2",
+    )
 ```
 
-Please consult [our explanation on the FSDP constructor](../04-fully-sharded-data-parallel/README.md#the-fsdp-constructor) for more info.
+### Apply `fully_shard()`
 
-As a reminder - this will cause FSDP to gather all the parameters for each DecoderLayer (which includes Attention, Linear, and various norm modules), and shard them across the world. At the start of forward/backward pass FSDP will issue an all-gather so all the nodes have the full weights in memory, and at the end of the DecoderLayer forward/backward, it will free up the full weights again.
+Same thing we did last chapter. One slight difference here is we are setting `reshard_after_forward=False` on the top level model. Since that is the last layer to execute we can use the weights immediately during the backwards pass.
 
-So where you apply FSDP determines where the all-gather happens!
+```python
+fsdp_config = dict(
+    offload_policy=CPUOffloadPolicy() if args.cpu_offload else None,
+    mp_policy=MixedPrecisionPolicy(param_dtype=dtype, reduce_dtype=torch.float32),
+)
+for decoder in model.model.layers:
+    fully_shard(decoder, reshard_after_forward=True, **fsdp_config)
+fully_shard(model, reshard_after_forward=False, **fsdp_config)
+
+model.to_empty(device="cpu" if args.cpu_offload else device)
+dist.barrier()
+```
+
+### Broadcast weights from rank 0
+
+[`set_model_state_dict()`](https://docs.pytorch.org/docs/stable/distributed.checkpoint.html#torch.distributed.checkpoint.state_dict.set_model_state_dict) will do the heavy lifting of broadcasting all of our weights (the `broadcast_from_rank0` means rank 0 will broadcast the `full_sd` to all ranks. remember that `full_sd` only exists on rank 0).
+
+```python
+set_model_state_dict(
+    model=model,
+    model_state_dict=full_sd,
+    options=StateDictOptions(
+        full_state_dict=True,
+        broadcast_from_rank0=True,
+        cpu_offload=args.cpu_offload,
+    ),
+)
+```
+
+Now unfortunately that's not quite all we need because of a little quirk of pytorch: buffers are not included in a model's state_dict()! That means things like RotaryEmbedding layers will not have the correct data because they don't exist in the state dict. So we have to manually do some extra work to broadcast the buffers from rank 0 as well:
+
+```python
+if rank == 0:
+    for weight, buffer in zip(full_model.buffers(), model.buffers()):
+        buffer.copy_(weight)
+        dist.broadcast(buffer.to(device), src=0)
+else:
+    for buffer in model.buffers():
+        device_buffer = buffer.to(device)
+        dist.broadcast(device_buffer, src=0)
+        buffer.copy_(device_buffer.to(buffer.device))
+```
+
+And finally just to clean up our CPU RAM usage we can deallocate the `full_model` since we no longer need it:
+
+```python
+del full_sd
+# convienient way to force deallocation a model
+if rank == 0:
+    full_model.to(torch.device("meta"))
+del full_model
+```
 
 ## Gradient (aka activation) checkpointing
 
@@ -127,7 +169,7 @@ Another piece of reducing memory usage is gradient checkpointing (first introduc
 
 The method we are using is kind of a hidden method in pytorch, but this is actually exactly what [accelerate uses under the hood](https://github.com/huggingface/accelerate/blob/v0.34.2/src/accelerate/accelerator.py#L1492) so rest assured that it is a "standard" way of doing it:
 
-This piece of code has to go **after** the FSDP constructor!!! I'm not exactly sure of the reason, but it doesn't work before the FSDP initialization.
+This piece of code has to go **after** the fully_shard bits!!! I'm not exactly sure of the reason, but it doesn't work before the FSDP initialization.
 
 ```python
 from torch.distributed.algorithms._checkpoint.checkpoint_wrapper import (
@@ -135,8 +177,15 @@ from torch.distributed.algorithms._checkpoint.checkpoint_wrapper import (
     checkpoint_wrapper,
 )
 
-model = FSDP(...)
+fully_shard(...)
 
+from torch.nn import Embedding
+from transformers.models.llama.modeling_llama import LlamaDecoderLayer
+
+wrap_policy = functools.partial(
+    transformer_auto_wrap_policy,
+    transformer_layer_cls={LlamaDecoderLayer, Embedding},
+)
 apply_activation_checkpointing(
     model, checkpoint_wrapper_fn=checkpoint_wrapper, auto_wrap_policy=wrap_policy
 )
@@ -156,6 +205,16 @@ If you want to peek through the pytorch code:
 1. [_single_tensor_adamw()](https://github.com/pytorch/pytorch/blob/v2.4.1/torch/optim/adamw.py#L322) is the default implementation used
 2. [_fused_adamw()](https://github.com/pytorch/pytorch/blob/v2.4.1/torch/optim/adamw.py#L612) is the fused implementation
 
+## torch.compile
+
+This is an easy win for us to gain some throughput:
+
+```python
+model = torch.compile(model)
+model.loss_function = torch.compile(model.loss_function)
+optimizer.step = torch.compile(optimizer.step)
+```
+
 ## NOT de-allocating gradients
 
 You may have seen this `set_to_none` argument in [optimizer.zero_grad()](https://pytorch.org/docs/stable/generated/torch.optim.Optimizer.zero_grad.html). According to the docs:
@@ -165,7 +224,7 @@ You may have seen this `set_to_none` argument in [optimizer.zero_grad()](https:/
 Basically `set_to_none=True` will **deallocate the gradients** after they are used. In most GPU cases where we want to save a bit of memory, it is a good thing to de-allocate. However in our case we are using CPU offload, which means all of our gradients are already on the CPU! Since we aren't taking up GPU memory, that means we just have to pay for allocating & de-allocating a lot if we do set to none. So if you set `set_to_none=False` you should actually see a slight speed up for our case!
 
 ```python
-optimizer.zero_grad(set_to_none=args.cpu_offload == "off")
+optimizer.zero_grad(set_to_none=not args.cpu_offload)
 ```
 
 ## Launch command

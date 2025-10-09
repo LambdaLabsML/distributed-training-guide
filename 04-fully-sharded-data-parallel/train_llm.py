@@ -88,16 +88,12 @@ def main():
     for decoder in model.model.layers:
         fully_shard(decoder, **fsdp_config)
     fully_shard(model, **fsdp_config)
-    LOGGER.debug("Sharded model")
 
-    load_device = "cpu" if args.cpu_offload else device
-    model.to_empty(device=load_device)
-    LOGGER.info(f"Initialized model uses {get_mem_stats(device)['curr_alloc_gb']}gb")
-
+    model.to_empty(device="cpu" if args.cpu_offload else device)
     model.apply(
         lambda m: m.reset_parameters() if hasattr(m, "reset_parameters") else None
     )
-    LOGGER.debug("Reset model weights")
+    LOGGER.info(f"Initialized model uses {get_mem_stats(device)['curr_alloc_gb']}gb")
 
     # NOTE: since this can download data, make sure to do the main process first
     # NOTE: This assumes that the data is on a **shared** network drive, accessible to all processes
@@ -188,6 +184,9 @@ def main():
         batches = iter(dataloader)
 
         for i_step in range(len(dataloader)):
+            # NOTE: prefetches the first layer
+            model.unshard()
+
             with timers["data"], torch.no_grad():
                 batch = next(batches)
                 batch = {k: v.to(device=device) for k, v in batch.items()}
