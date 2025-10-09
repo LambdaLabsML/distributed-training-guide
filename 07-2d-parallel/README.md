@@ -2,8 +2,6 @@
 
 Using both [FSDP](../04-fully-sharded-data-parallel) and [TP](../06-tensor-parallel) is actually quite simple code wise when starting from our [chapter 6 TP script](../06-tensor-parallel/train_llm.py).
 
-**Disclaimer** this only works if you use pytorch's **newer FSDP 2 api, which is still in alpha stages**.
-
 What does using these two together mean exactly? Let's get into an example with 6 GPUs, 2 way FSDP and 3 way TP:
 
 <img width="894" alt="image" src="https://github.com/user-attachments/assets/c384756a-66a9-4056-be1b-018fb046e275" />
@@ -23,12 +21,11 @@ We are starting from our [chapter 6 code](../06-tensor-parallel/train_llm.py), w
 The api is much simpler than FSDP 1 api, this is all we need to add **after** our TP code:
 
 ```python
-from torch.distributed._composable.fsdp import fully_shard
+from torch.distributed.fsdp import fully_shard
 
-if mesh["dp"].size() > 1:
-    for layer in model.model.layers:
-        fully_shard(layer, mesh=mesh["dp"])
-    fully_shard(model, mesh=mesh["dp"])
+for layer in model.model.layers:
+    fully_shard(layer, mesh=mesh["dp"])
+fully_shard(model, mesh=mesh["dp"])
 ```
 
 Note how we are passing our `mesh["dp"]` here to indicate that this is happening across our data parallel dimension.
@@ -39,7 +36,6 @@ When creating our mesh we are going to set the TP size based on a CLI argument:
 
 ```python
 assert world_size % args.tp == 0
-
 mesh = dist.device_mesh.init_device_mesh(
     "cuda",
     (world_size // args.tp, args.tp),
