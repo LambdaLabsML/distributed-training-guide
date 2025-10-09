@@ -13,7 +13,7 @@ from torch.utils.data import DataLoader
 from torch.utils.data.distributed import DistributedSampler
 from torch import distributed as dist
 import torch.distributed.tensor.parallel as tp
-from torch.distributed._tensor import Shard, Replicate
+from torch.distributed.tensor import Shard, Replicate
 from torch.distributed.elastic.multiprocessing.errors import record
 import torch.distributed.checkpoint as DCP
 

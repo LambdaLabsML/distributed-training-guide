@@ -149,6 +149,9 @@ def main():
             buffer.copy_(device_buffer.to(buffer.device))
 
     del full_sd
+    # convienient way to force deallocation a model
+    if rank == 0:
+        full_model.to(torch.device("meta"))
     del full_model
     LOGGER.info(f"Initialized model uses {get_mem_stats(device)['curr_alloc_gb']}gb")
 
@@ -185,10 +188,6 @@ def main():
         )
         LOGGER.info("Applied gradient checkpoint")
 
-    if args.compile_model:
-        model = torch.compile(model)
-        LOGGER.info("Compiled model")
-
     # NOTE: since this can download data, make sure to do the main process first on each node
     # since we manually specified HF_HOME to be a node local drive.
     with rank0_first():
@@ -210,6 +209,11 @@ def main():
     lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
         optimizer, T_max=1000, eta_min=args.lr * 1e-2
     )
+
+    if args.compile_model:
+        model = torch.compile(model)
+        model.loss_function = torch.compile(model.loss_function)
+        LOGGER.info("Compiled model")
 
     is_experiment = False
     exp_dir: Path = Path(args.save_dir)
