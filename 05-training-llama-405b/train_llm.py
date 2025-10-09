@@ -41,11 +41,7 @@ from transformers import (
     AutoTokenizer,
     default_data_collator,
 )
-from transformers.models.llama.modeling_llama import LlamaRMSNorm, LlamaRotaryEmbedding
 
-# fixes for reset_parameters not existing
-LlamaRMSNorm.reset_parameters = lambda self: torch.nn.init.ones_(self.weight)
-LlamaRotaryEmbedding.reset_parameters = lambda _: None
 
 LOGGER = logging.getLogger(__name__)
 

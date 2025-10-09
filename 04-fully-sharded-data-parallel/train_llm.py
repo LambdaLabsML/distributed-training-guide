@@ -32,8 +32,17 @@ from transformers import (
 # fixes for reset_parameters not existing
 from transformers.models.llama.modeling_llama import LlamaRMSNorm, LlamaRotaryEmbedding
 
+
+def reset_rope(self: LlamaRotaryEmbedding):
+    self.inv_freq, self.attention_scaling = self.rope_init_fn(
+        self.config, self.inv_freq.device
+    )
+    self.original_inv_freq = self.inv_freq
+
+
 LlamaRMSNorm.reset_parameters = lambda self: torch.nn.init.ones_(self.weight)
-LlamaRotaryEmbedding.reset_parameters = lambda _: None
+LlamaRotaryEmbedding.reset_parameters = reset_rope
+
 
 LOGGER = logging.getLogger(__name__)
 
@@ -73,7 +82,7 @@ def main():
 
     fsdp_config = dict(
         reshard_after_forward=True,
-        offload_policy=CPUOffloadPolicy() if args.cpu_offload == "on" else None,
+        offload_policy=CPUOffloadPolicy() if args.cpu_offload else None,
         mp_policy=MixedPrecisionPolicy(param_dtype=dtype, reduce_dtype=torch.float32),
     )
     for decoder in model.model.layers:
@@ -81,16 +90,14 @@ def main():
     fully_shard(model, **fsdp_config)
     LOGGER.debug("Sharded model")
 
-    model.to_empty(device=device)
+    load_device = "cpu" if args.cpu_offload else device
+    model.to_empty(device=load_device)
     LOGGER.info(f"Initialized model uses {get_mem_stats(device)['curr_alloc_gb']}gb")
 
     model.apply(
         lambda m: m.reset_parameters() if hasattr(m, "reset_parameters") else None
     )
     LOGGER.debug("Reset model weights")
-
-    model = torch.compile(model)
-    LOGGER.debug("Compiled model")
 
     # NOTE: since this can download data, make sure to do the main process first
     # NOTE: This assumes that the data is on a **shared** network drive, accessible to all processes
@@ -374,7 +381,7 @@ def _get_parser() -> argparse.ArgumentParser:
     parser.add_argument("--log-freq", default=100, type=int)
     parser.add_argument("--ckpt-freq", default=500, type=int)
     parser.add_argument("-s", "--seq-length", default=1024, type=int)
-    parser.add_argument("--cpu-offload", default="off", choices=["on", "off"])
+    parser.add_argument("--cpu-offload", default=False, action="store_true")
     return parser
 
 
