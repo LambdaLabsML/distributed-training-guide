@@ -18,11 +18,7 @@ from torch.distributed.algorithms._checkpoint.checkpoint_wrapper import (
     checkpoint_wrapper,
 )
 from torch.distributed.elastic.multiprocessing.errors import record
-from torch.distributed.fsdp import (
-    fully_shard,
-    CPUOffloadPolicy,
-    MixedPrecisionPolicy
-)
+from torch.distributed.fsdp import fully_shard, CPUOffloadPolicy, MixedPrecisionPolicy
 from torch.distributed.fsdp.wrap import transformer_auto_wrap_policy
 from torch.distributed.checkpoint.state_dict import (
     get_state_dict,

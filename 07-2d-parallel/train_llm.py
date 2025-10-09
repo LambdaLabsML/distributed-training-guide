@@ -12,11 +12,11 @@ import torch
 from torch.utils.data import DataLoader
 from torch.utils.data.distributed import DistributedSampler
 from torch import distributed as dist
+from torch.distributed.tensor import Shard, Replicate
 import torch.distributed.tensor.parallel as tp
-from torch.distributed._tensor import Shard, Replicate
 from torch.distributed.elastic.multiprocessing.errors import record
 import torch.distributed.checkpoint as DCP
-from torch.distributed._composable.fsdp import fully_shard
+from torch.distributed.fsdp import fully_shard
 
 import tqdm
 import datasets
@@ -35,18 +35,20 @@ def main():
     parser = _get_parser()
     args = parser.parse_args()
 
-    dist.init_process_group()
+    gpus_on_node = torch.cuda.device_count()
 
-    rank = dist.get_rank()
-    local_rank = rank % torch.cuda.device_count()
-    world_size = dist.get_world_size()
+    rank = int(os.getenv("RANK", "0"))
+    local_rank = rank % gpus_on_node
+    world_size = int(os.getenv("WORLD_SIZE", "1"))
+    device = torch.device(f"cuda:{local_rank}")
+    torch.cuda.set_device(device)
+    dist.init_process_group(rank=rank, world_size=world_size, device_id=device)
 
-    assert args.tp > 1
-    assert world_size % args.tp == 0
+    assert world_size % args.tensor_parallel == 0
 
     mesh = dist.device_mesh.init_device_mesh(
         "cuda",
-        (world_size // args.tp, args.tp),
+        (world_size // args.tensor_parallel, args.tensor_parallel),
         mesh_dim_names=("dp", "tp"),
     )
 
@@ -55,26 +57,22 @@ def main():
         level=logging.INFO,
     )
 
-    LOGGER.info(os.environ)
-    LOGGER.info(args)
-    LOGGER.info(f"local_rank={local_rank} rank={rank} world size={world_size}")
-    LOGGER.info(f"dp_size={mesh['dp'].size()} tp_size={mesh['tp'].size()}")
+    LOGGER.debug(os.environ)
+    LOGGER.debug(args)
+    LOGGER.debug(f"local_rank={local_rank} rank={rank} world size={world_size}")
+    LOGGER.debug(f"dp_size={mesh['dp'].size()} tp_size={mesh['tp'].size()}")
 
-    device = torch.device(f"cuda:{local_rank}")
     dtype = torch.bfloat16
-    torch.cuda.set_device(device)
-
     torch.manual_seed(args.seed)
 
-    LOGGER.info(f"Loading model from HF_HOME={os.environ['HF_HOME']}")
-
-    with rank_ordered(should_go_first=local_rank == 0):
+    with rank_ordered(should_go_first=local_rank == 0), device:
         config = AutoConfig.from_pretrained(args.model_name, use_cache=False)
-        with device:
-            model = AutoModelForCausalLM.from_config(
-                config, dtype=dtype, attn_implementation="flash_attention_2"
-            )
-    LOGGER.info(f"{sum(p.numel() for p in model.parameters())} model parameters")
+        model = AutoModelForCausalLM.from_config(
+            config, dtype=dtype, attn_implementation="flash_attention_2"
+        )
+    LOGGER.info(
+        f"Training {sum(p.numel() for p in model.parameters())} model parameters"
+    )
 
     tp.parallelize_module(
         model,
@@ -122,18 +120,15 @@ def main():
         },
     )
 
+    fsdp_config = dict(reshard_after_forward=True, mesh=mesh["dp"])
     for layer in model.model.layers:
-        fully_shard(layer, mesh=mesh["dp"])
-    fully_shard(model, mesh=mesh["dp"])
-
-    LOGGER.info(f"Final Architecture: {model}")
-    LOGGER.info(f"{sum(p.numel() for p in model.parameters())} model parameters")
+        fully_shard(layer, **fsdp_config)
+    fully_shard(model, **fsdp_config)
 
     model = model.to_empty(device=device)
     model.init_weights()
     model.train()
-
-    LOGGER.info(f"{get_mem_stats(device)}")
+    LOGGER.info(f"Initialized model uses {get_mem_stats(device)['curr_alloc_gb']}gb")
 
     # NOTE: since this can download data, make sure to do the main process first on each node
     # since we manually specified HF_HOME to be a node local drive.
@@ -163,7 +158,11 @@ def main():
         optimizer, T_max=1000, eta_min=args.lr * 1e-2
     )
 
-    exp_dir: Path = Path(args.save_dir) / args.experiment_name
+    is_experiment = False
+    exp_dir: Path = Path(args.save_dir)
+    if args.experiment_name is not None:
+        is_experiment = True
+        exp_dir = exp_dir / args.experiment_name
 
     # attempt resume
     state = {
@@ -173,7 +172,7 @@ def main():
         "running_loss": 0,
     }
     resumed = False
-    if (exp_dir / "state.json").exists():
+    if is_experiment and (exp_dir / "state.json").exists():
         DCP.load(
             dict(model=model, optimizer=optimizer),
             checkpoint_id=exp_dir / "checkpoint",
@@ -189,8 +188,9 @@ def main():
     LOGGER.info(f"Resumed={resumed} | {state}")
     dist.barrier()
 
-    if (exp_dir.is_mount() and rank == 0) or (
-        not exp_dir.is_mount() and local_rank == 0
+    if is_experiment and (
+        (exp_dir.is_mount() and rank == 0)
+        or (not exp_dir.is_mount() and local_rank == 0)
     ):
         LOGGER.info(f"Creating experiment root directory")
         exp_dir.mkdir(parents=True, exist_ok=True)
@@ -201,7 +201,7 @@ def main():
     for state["epoch"] in range(state["epoch"], args.num_epochs):
         LOGGER.info(f"Begin epoch {state['epoch']} at step {state['epoch_step']}")
 
-        progress_bar = tqdm.tqdm(range(len(dataloader)), disable=True)
+        progress_bar = tqdm.tqdm(range(len(dataloader)))
         if state["epoch_step"] > 0:
             progress_bar.update(state["epoch_step"])
 
@@ -261,7 +261,7 @@ def main():
                 for t in timers.values():
                     t.reset()
 
-            if state["global_step"] % args.ckpt_freq == 0:
+            if is_experiment and state["global_step"] % args.ckpt_freq == 0:
                 LOGGER.info("Saving checkpoint.")
                 dist.barrier()
                 # NOTE: we have to call this on ALL ranks
@@ -387,8 +387,9 @@ class LocalTimer:
 
 def _get_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser()
-    parser.add_argument("-e", "--experiment-name", default=None, required=True)
+    parser.add_argument("-e", "--experiment-name", default=None)
     parser.add_argument("-d", "--dataset-name", default=None, required=True)
+    parser.add_argument("--dataset-subset", default=None)
     parser.add_argument("-m", "--model-name", default=None, required=True)
     parser.add_argument("--save-dir", default="../outputs")
     parser.add_argument("--seed", default=0, type=int)
@@ -397,8 +398,8 @@ def _get_parser() -> argparse.ArgumentParser:
     parser.add_argument("-b", "--batch-size", default=1, type=int)
     parser.add_argument("--log-freq", default=100, type=int)
     parser.add_argument("--ckpt-freq", default=500, type=int)
-    parser.add_argument("-s", "--seq-length", default=None, type=int)
-    parser.add_argument("--tp", default=8, type=int)
+    parser.add_argument("-s", "--seq-length", default=1024, type=int)
+    parser.add_argument("-tp", "--tensor-parallel", default=8, type=int)
     return parser
 
 

@@ -8,10 +8,7 @@ The rest of this guide uses this code as the basis, so this chapter explains all
 
 ```bash
 cd distributed-training-guide/01-single-gpu
-python train_llm.py \
-    --experiment-name gpt2-alpaca-single-gpu-$(date +%Y-%m-%dT%H-%M-%S) \
-    --dataset-name tatsu-lab/alpaca \
-    --model-name openai-community/gpt2
+python train_llm.py -d tatsu-lab/alpaca -m openai-community/gpt2
 ```
 
 ## Code explanation
@@ -141,30 +138,6 @@ if (exp_dir / "state.json").exists():
     resumed = True
 ```
 
-### Experiment tracking with Weights & Biases (wandb)
-
-We resume the run in [wandb](https://wandb.ai/) if we loaded a checkpoint (& also ensure that our unique experiment ID is used for the wandb run id).
-
-We include a couple of useful initialization flags here as well, so wandb will save our code, and include some hyperparameters we specified on the CLI.
-
-When we resume a run, we tell wandb that we "must" initialize in resume mode.
-
-```python
-wandb.init(
-    project="distributed-training-guide",
-    dir=exp_dir,
-    name=args.experiment_name,
-    id=args.experiment_name,
-    resume="must" if resumed else None,
-    save_code=True,
-    config={
-        "args": vars(args),
-        "training_data_size": len(train_data),
-        "num_batches": len(dataloader),
-    },
-)
-```
-
 ### Iterating our batches
 
 We do this in a non-standard way so we can time various parts of the training loop. Normally, we wouldn't be able to time the actual construction of the batch, but by manually pulling the next batch using `next()`, we can time it:
@@ -197,7 +170,7 @@ with timers["update"]:
     lr_scheduler.step()
 ```
 
-### Logging to wandb (& stdout)
+### Logging to stdout
 
 The next blocks of code involve logging various tidbits about how our training is going:
 
@@ -222,7 +195,6 @@ if state["global_step"] % args.log_freq == 0:
     }
 
     LOGGER.info(info)
-    wandb.log(info, step=state["global_step"])
 
     state["running_loss"] = 0
     for t in timers.values():

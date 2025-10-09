@@ -13,9 +13,8 @@ torchrun --standalone \
     --redirects 3 \
     --log-dir ../logs \
     train_llm.py \
-    --experiment-name gpt2-alpaca-ddp-$(date +%Y-%m-%dT%H-%M-%S) \
-    --dataset-name tatsu-lab/alpaca \
-    --model-name openai-community/gpt2
+    d tatsu-lab/alpaca \
+    -m openai-community/gpt2
 ```
 
 For multi node, see our [chapter on job launchers](../03-job-launchers/).

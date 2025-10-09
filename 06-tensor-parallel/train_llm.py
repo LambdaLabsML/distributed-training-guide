@@ -12,8 +12,8 @@ import torch
 from torch.utils.data import DataLoader
 from torch.utils.data.distributed import DistributedSampler
 from torch import distributed as dist
-import torch.distributed.tensor.parallel as tp
 from torch.distributed.tensor import Shard, Replicate
+import torch.distributed.tensor.parallel as tp
 from torch.distributed.elastic.multiprocessing.errors import record
 import torch.distributed.checkpoint as DCP
 
@@ -185,9 +185,10 @@ def main():
         LOGGER.info(f"Resumed={resumed} | {state}")
     dist.barrier()
 
-    if is_experiment and ((exp_dir.is_mount() and rank == 0) or (
-        not exp_dir.is_mount() and local_rank == 0
-    )):
+    if is_experiment and (
+        (exp_dir.is_mount() and rank == 0)
+        or (not exp_dir.is_mount() and local_rank == 0)
+    ):
         LOGGER.info(f"Creating experiment root directory")
         exp_dir.mkdir(parents=True, exist_ok=True)
     dist.barrier()
