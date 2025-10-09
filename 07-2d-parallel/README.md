@@ -2,8 +2,6 @@
 
 Using both [FSDP](../04-fully-sharded-data-parallel) and [TP](../06-tensor-parallel) is actually quite simple code wise when starting from our [chapter 6 TP script](../06-tensor-parallel/train_llm.py).
 
-**Disclaimer** this only works if you use pytorch's **newer FSDP 2 api, which is still in alpha stages**.
-
 What does using these two together mean exactly? Let's get into an example with 6 GPUs, 2 way FSDP and 3 way TP:
 
 <img width="894" alt="image" src="https://github.com/user-attachments/assets/c384756a-66a9-4056-be1b-018fb046e275" />
