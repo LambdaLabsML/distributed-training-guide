@@ -158,7 +158,6 @@ def main():
     if args.prefetch_layers:
         decoders = model.model.layers
         num_prefetch = 1
-        layer: FSDPModule
         for i, layer in enumerate(decoders):
             layer.set_modules_to_forward_prefetch(
                 [
@@ -210,10 +209,10 @@ def main():
         optimizer, T_max=1000, eta_min=args.lr * 1e-2
     )
 
-    if args.compile_model:
-        model = torch.compile(model)
-        model.loss_function = torch.compile(model.loss_function)
-        LOGGER.info("Compiled model")
+    model = torch.compile(model)
+    model.loss_function = torch.compile(model.loss_function)
+    optimizer.step = torch.compile(optimizer.step)
+    LOGGER.info("Compiled model")
 
     is_experiment = False
     exp_dir: Path = Path(args.save_dir)
@@ -272,7 +271,7 @@ def main():
     for state["epoch"] in range(state["epoch"], args.num_epochs):
         LOGGER.info(f"Begin epoch {state['epoch']} at step {state['epoch_step']}")
 
-        progress_bar = tqdm.tqdm(range(len(dataloader)), disable=True)
+        progress_bar = tqdm.tqdm(range(len(dataloader)))
         if state["epoch_step"] > 0:
             progress_bar.update(state["epoch_step"])
 
@@ -288,16 +287,19 @@ def main():
                 # NOTE: for resuming
                 continue
 
+            torch.cuda.empty_cache()
             with timers["forward"]:
                 outputs = model(**batch)
 
+            torch.cuda.empty_cache()
             with timers["backward"]:
                 outputs.loss.backward()
 
+            torch.cuda.empty_cache()
             with timers["update"]:
                 optimizer.step()
                 lr_scheduler.step()
-                optimizer.zero_grad(set_to_none=args.cpu_offload)
+                optimizer.zero_grad(set_to_none=True)
 
             state["global_step"] += 1
             state["epoch_step"] += 1
@@ -476,7 +478,6 @@ def _get_parser() -> argparse.ArgumentParser:
     parser.add_argument("--cpu-offload", default=False, action="store_true")
     parser.add_argument("--checkpoint-activations", default=False, action="store_true")
     parser.add_argument("--prefetch-layers", default=False, action="store_true")
-    parser.add_argument("--compile-model", default=False, action="store_true")
     return parser
 
 
