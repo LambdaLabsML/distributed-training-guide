@@ -17,7 +17,6 @@ Quick Jump:
 - [Launch command](#launch-command)
 - [Monitoring](#monitoring)
 - [Run statistics](#run-statistics)
-- [Other notes on settings that didn't affect throughput](#other-notes-on-settings-that-didnt-affect-throughput)
 
 ## Use flash attention
 
@@ -278,15 +277,5 @@ Training with `--seq-length 4096` and `--batch-size 1` on 64 H100 gpus (8 separa
 - Peak Memory Allocated: 52.9GB
 - Peak Memory Reserved: 77.9GB
 
-Noting that reserved memory has to do with pytorch allocation caching.
+**NOTE** these numbers were produced with pytorch 2.5.1 and an older version of the guide, so they may be out of date. 64xH100s are hard to find laying around 😄
 
-## Other notes on settings that didn't affect throughput
-
-- Allowing tf32 had no impact on throughput (`torch.backends.cudnn.allow_tf32` and `torch.backends.cuda.matmul.allow_tf32`) 
-- Enabling benchmarking had no impact on throughput (`torch.backends.cudnn.benchmark = True`)
-- Using CuDNN sdpa was slower (`attn_implementation="sdpa"` and `torch.backends.cuda.enable_cudnn_sdp(True)`)
-- torch.compile had no impact (`use_orig_params=True` and `torch.compile` after FSDP constructor)
-- Very minimal testing of NCCL environment variables either made things worse or had no impact (https://docs.nvidia.com/deeplearning/nccl/user-guide/docs/env.html)
-- `PYTORCH_NO_CUDA_MEMORY_CACHING=1` made enough memory available that `--batch-size 2` or higher sequence lengths were possible, but it was much much slower.
-  - It's possible that some well placed calls to `torch.cuda.empty_cache()` could achieve this without the throughput loss.
-- Only `FULL_SHARD` works. Others fail silently.
