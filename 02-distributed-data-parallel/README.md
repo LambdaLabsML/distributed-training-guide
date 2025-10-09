@@ -30,7 +30,6 @@ Quick jump:
     - I/O related guards
         - [Downloading model/data in rank 0 first](#downloading-model--data-in-rank-0-first)
         - [Interacting with file system on rank 0 only](#only-creating-experiment-directory-on-rank-0)
-        - [wandb on rank 0 only](#wandb-runs-on-rank-0)
         - [Checkpoints from rank 0 only](#save-checkpoint-on-rank-0)
 - [Optimizing memory - Zero Redundancy](#optimizing-memory---zero-redundancy-optimizer)
 - [How multi node works](#how-multi-node-works)
