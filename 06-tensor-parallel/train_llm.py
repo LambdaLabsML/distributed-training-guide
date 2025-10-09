@@ -34,13 +34,14 @@ def main():
     parser = _get_parser()
     args = parser.parse_args()
 
-    dist.init_process_group()
-
     gpus_on_node = torch.cuda.device_count()
 
-    rank = dist.get_rank()
+    rank = int(os.getenv("RANK", "0"))
     local_rank = rank % gpus_on_node
-    world_size = dist.get_world_size()
+    world_size = int(os.getenv("WORLD_SIZE", "1"))
+    device = torch.device(f"cuda:{local_rank}")
+    torch.cuda.set_device(device)
+    dist.init_process_group(rank=rank, world_size=world_size, device_id=device)
 
     assert (
         world_size % gpus_on_node == 0
@@ -58,26 +59,22 @@ def main():
         level=logging.INFO,
     )
 
-    LOGGER.info(os.environ)
-    LOGGER.info(args)
-    LOGGER.info(f"local_rank={local_rank} rank={rank} world size={world_size}")
-    LOGGER.info(f"dp_size={mesh['dp'].size()} tp_size={mesh['tp'].size()}")
+    LOGGER.debug(os.environ)
+    LOGGER.debug(args)
+    LOGGER.debug(f"local_rank={local_rank} rank={rank} world size={world_size}")
+    LOGGER.debug(f"dp_size={mesh['dp'].size()} tp_size={mesh['tp'].size()}")
 
-    device = torch.device(f"cuda:{local_rank}")
     dtype = torch.bfloat16
-    torch.cuda.set_device(device)
-
     torch.manual_seed(args.seed)
 
-    LOGGER.info(f"Loading model from HF_HOME={os.environ['HF_HOME']}")
-
-    with rank_ordered(should_go_first=local_rank == 0):
+    with rank_ordered(should_go_first=local_rank == 0), device:
         config = AutoConfig.from_pretrained(args.model_name, use_cache=False)
-        with device:
-            model = AutoModelForCausalLM.from_config(
-                config, dtype=dtype, attn_implementation="flash_attention_2"
-            )
-    LOGGER.info(f"{sum(p.numel() for p in model.parameters())} model parameters")
+        model = AutoModelForCausalLM.from_config(
+            config, dtype=dtype, attn_implementation="flash_attention_2"
+        )
+    LOGGER.info(
+        f"Training {sum(p.numel() for p in model.parameters())} model parameters"
+    )
 
     tp.parallelize_module(
         model,
@@ -111,7 +108,6 @@ def main():
                 "mlp.down_proj": tp.RowwiseParallel(output_layouts=Shard(1)),
             },
         )
-
     tp.parallelize_module(
         model,
         mesh["tp"],
@@ -125,20 +121,16 @@ def main():
         },
     )
 
-    LOGGER.info(f"Final Architecture: {model}")
-    LOGGER.info(f"{sum(p.numel() for p in model.parameters())} model parameters")
-
     model = model.to_empty(device=device)
     model.init_weights()
     model.train()
-
-    LOGGER.info(f"{get_mem_stats(device)}")
+    LOGGER.info(f"Initialized model uses {get_mem_stats(device)['curr_alloc_gb']}gb")
 
     # NOTE: since this can download data, make sure to do the main process first on each node
     # since we manually specified HF_HOME to be a node local drive.
     with rank_ordered(should_go_first=local_rank == 0):
         train_data = _load_and_preprocess_data(args, config)
-    LOGGER.info(f"{len(train_data)} training samples")
+    LOGGER.debug(f"{len(train_data)} training samples")
 
     dataloader = DataLoader(
         train_data,
@@ -155,14 +147,18 @@ def main():
             rank=mesh["dp"].get_local_rank(),  # equivalent to `rank // num_nodes`
         ),
     )
-    LOGGER.info(f"{len(dataloader)} batches per epoch")
+    LOGGER.debug(f"{len(dataloader)} batches per epoch")
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, fused=True)
     lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
         optimizer, T_max=1000, eta_min=args.lr * 1e-2
     )
 
-    exp_dir: Path = Path(args.save_dir) / args.experiment_name
+    is_experiment = False
+    exp_dir: Path = Path(args.save_dir)
+    if args.experiment_name is not None:
+        is_experiment = True
+        exp_dir = exp_dir / args.experiment_name
 
     # attempt resume
     state = {
@@ -172,7 +168,7 @@ def main():
         "running_loss": 0,
     }
     resumed = False
-    if (exp_dir / "state.json").exists():
+    if is_experiment and (exp_dir / "state.json").exists():
         DCP.load(
             dict(model=model, optimizer=optimizer),
             checkpoint_id=exp_dir / "checkpoint",
@@ -185,12 +181,13 @@ def main():
         with open(exp_dir / "state.json") as fp:
             state = json.load(fp)
         resumed = True
-    LOGGER.info(f"Resumed={resumed} | {state}")
+    if is_experiment:
+        LOGGER.info(f"Resumed={resumed} | {state}")
     dist.barrier()
 
-    if (exp_dir.is_mount() and rank == 0) or (
+    if is_experiment and ((exp_dir.is_mount() and rank == 0) or (
         not exp_dir.is_mount() and local_rank == 0
-    ):
+    )):
         LOGGER.info(f"Creating experiment root directory")
         exp_dir.mkdir(parents=True, exist_ok=True)
     dist.barrier()
@@ -260,7 +257,7 @@ def main():
                 for t in timers.values():
                     t.reset()
 
-            if state["global_step"] % args.ckpt_freq == 0:
+            if is_experiment and state["global_step"] % args.ckpt_freq == 0:
                 LOGGER.info("Saving checkpoint.")
                 dist.barrier()
                 # NOTE: we have to call this on ALL ranks
@@ -386,8 +383,9 @@ class LocalTimer:
 
 def _get_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser()
-    parser.add_argument("-e", "--experiment-name", default=None, required=True)
+    parser.add_argument("-e", "--experiment-name", default=None)
     parser.add_argument("-d", "--dataset-name", default=None, required=True)
+    parser.add_argument("--dataset-subset", default=None)
     parser.add_argument("-m", "--model-name", default=None, required=True)
     parser.add_argument("--save-dir", default="../outputs")
     parser.add_argument("--seed", default=0, type=int)
@@ -396,7 +394,7 @@ def _get_parser() -> argparse.ArgumentParser:
     parser.add_argument("-b", "--batch-size", default=1, type=int)
     parser.add_argument("--log-freq", default=100, type=int)
     parser.add_argument("--ckpt-freq", default=500, type=int)
-    parser.add_argument("-s", "--seq-length", default=None, type=int)
+    parser.add_argument("-s", "--seq-length", default=1024, type=int)
     return parser
 
 
