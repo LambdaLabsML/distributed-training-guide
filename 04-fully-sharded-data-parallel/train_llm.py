@@ -200,7 +200,7 @@ def main():
                 outputs = model(**batch)
 
             with timers["backward"]:
-                optimizer.zero_grad(set_to_none=True)
+                optimizer.zero_grad(set_to_none=not args.cpu_offload)
                 outputs.loss.backward()
 
             with timers["update"]:

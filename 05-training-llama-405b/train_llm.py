@@ -294,7 +294,7 @@ def main():
             with timers["update"]:
                 optimizer.step()
                 lr_scheduler.step()
-                optimizer.zero_grad(set_to_none=True)
+                optimizer.zero_grad(set_to_none=not args.cpu_offload)
 
             state["global_step"] += 1
             state["epoch_step"] += 1
