@@ -8,12 +8,12 @@ Single node command:
 cd distributed-training-guide/02-distributed-data-parallel
 export TORCHELASTIC_ERROR_FILE=../error.json
 export OMP_NUM_THREADS=1
-torchrun --standalone \
+torchrun \
     --nproc-per-node gpu \
     --redirects 3 \
     --log-dir ../logs \
     train_llm.py \
-    d tatsu-lab/alpaca \
+    -d tatsu-lab/alpaca \
     -m openai-community/gpt2
 ```
 
@@ -135,25 +135,15 @@ You are required to call both of these before calling other dist apis.
      parser = _get_parser()
      args = parser.parse_args()
 
-+    dist.init_process_group()
-+    rank = dist.get_rank()
-+    local_rank = rank % torch.cuda.device_count()
-+    world_size = dist.get_world_size()
-```
++   rank = int(os.getenv("RANK", "0"))
++   local_rank = rank % torch.cuda.device_count()
++   world_size = int(os.getenv("WORLD_SIZE", "1"))
 
-Then we can set our device using rank:
+-   device = torch.device(f"cuda") 
++   device = torch.device(f"cuda:{local_rank}")
++   torch.cuda.set_device(device)
 
-```diff
--device = torch.device(f"cuda")
-+device = torch.device(f"cuda:{local_rank}")
-```
-
-And finally add your call to torch.cuda.set_device shortly after that:
-
-```diff
- device = torch.device(f"cuda:{local_rank}")
- dtype = torch.bfloat16
-+torch.cuda.set_device(device)
++   dist.init_process_group(rank=rank, world_size=world_size, device_id=device)
 ```
 
 If you don't call torch.cuda.set_device, processes may not be using the correct CUDA device.
@@ -286,38 +276,6 @@ Since we check to see if the experiment directory already exists right before cr
 +if rank == 0:
      exp_dir.mkdir(parents=True, exist_ok=True)
 +dist.barrier()
-```
-
-### wandb runs on rank 0
-
-The standard approach for doing distributed wandb is to only invoke wandb on rank 0 process. This is very easy to implement and you don't have to worry about scaling issues as you add more ranks.
-
-There are other approaches you can use, like grouped wandb runs, which you can read about in our chapter on [wandb-configurations](../related-topics/wandb-configurations/) for more details.
-
-```diff
-+if rank == 0:
-     wandb.init(
-         project="distributed-training-guide",
-         dir=exp_dir,
-         name=args.experiment_name,
-         id=args.experiment_name,
-         resume="must" if resumed else None,
-         save_code=True,
-         config={
-             "args": vars(args),
-             "training_data_size": len(train_data),
-             "num_batches": len(dataloader),
-             "rank": rank,
-             "world_size": world_size,
-         },
-     )
-```
-
-and
-
-```diff
-+if rank == 0:
-     wandb.log(info, step=state["global_step"])
 ```
 
 ### Save checkpoint on rank 0
