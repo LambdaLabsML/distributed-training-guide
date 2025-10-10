@@ -173,20 +173,18 @@ This piece of code has to go **after** the fully_shard bits!!! I'm not exactly s
 ```python
 fully_shard(...)
 
-from transformers.models.llama.modeling_llama import LlamaDecoderLayer
-
-wrap_policy = functools.partial(
-    transformer_auto_wrap_policy,
-    transformer_layer_cls={LlamaDecoderLayer},
-)
-
 from torch.distributed.algorithms._checkpoint.checkpoint_wrapper import (
     apply_activation_checkpointing,
     checkpoint_wrapper,
 )
 
 apply_activation_checkpointing(
-    model, checkpoint_wrapper_fn=checkpoint_wrapper, auto_wrap_policy=wrap_policy
+    model,
+    checkpoint_wrapper_fn=checkpoint_wrapper,
+    auto_wrap_policy=functools.partial(
+        transformer_auto_wrap_policy,
+        transformer_layer_cls={LlamaDecoderLayer},
+    )
 )
 ```
 
