@@ -171,20 +171,20 @@ The method we are using is kind of a hidden method in pytorch, but this is actua
 This piece of code has to go **after** the fully_shard bits!!! I'm not exactly sure of the reason, but it doesn't work before the FSDP initialization.
 
 ```python
+fully_shard(...)
+
+from transformers.models.llama.modeling_llama import LlamaDecoderLayer
+
+wrap_policy = functools.partial(
+    transformer_auto_wrap_policy,
+    transformer_layer_cls={LlamaDecoderLayer},
+)
+
 from torch.distributed.algorithms._checkpoint.checkpoint_wrapper import (
     apply_activation_checkpointing,
     checkpoint_wrapper,
 )
 
-fully_shard(...)
-
-from torch.nn import Embedding
-from transformers.models.llama.modeling_llama import LlamaDecoderLayer
-
-wrap_policy = functools.partial(
-    transformer_auto_wrap_policy,
-    transformer_layer_cls={LlamaDecoderLayer, Embedding},
-)
 apply_activation_checkpointing(
     model, checkpoint_wrapper_fn=checkpoint_wrapper, auto_wrap_policy=wrap_policy
 )
