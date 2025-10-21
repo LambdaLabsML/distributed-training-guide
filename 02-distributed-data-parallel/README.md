@@ -67,7 +67,7 @@ The first 3 lines of the above can all be done asychronously. `loss.backward()` 
 
 Here is a high level depiction of how a single step of training works when using this data parallel technique:
 
-<img width="800" alt="image" src="https://github.com/user-attachments/assets/e228d298-30dc-4c3d-a550-e88ab55ddd93">
+<img width="800" alt="image" src="https://github.com/user-attachments/assets/a988f513-a5b3-4e5f-bf0d-019e796ee4e0" />
 
 So to be explicit: **`optimizer.step()` is a synchronization point across ALL processes**.
 
