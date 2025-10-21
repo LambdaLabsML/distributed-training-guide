@@ -108,7 +108,6 @@ def main():
             return torch.load(p, map_location=device, weights_only=True)
 
         model.load_state_dict(_load_to_device(exp_dir / "model.pt"))
-        optimizer.load_state_dict(_load_to_device(exp_dir / "optimizer.pt"))
         lr_scheduler.load_state_dict(_load_to_device(exp_dir / "lr_scheduler.pt"))
         with open(exp_dir / "state.json") as fp:
             state = json.load(fp)
