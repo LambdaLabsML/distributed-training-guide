@@ -63,6 +63,8 @@ def main():
     model = DistributedDataParallel(model, device_ids=[local_rank])
     LOGGER.info(f"Initialized model uses {get_mem_stats(device)['curr_alloc_gb']}gb")
 
+    model = torch.compile(model)
+
     # NOTE: Assumes that $HF_HOME is shared storage
     with rank0_first():
         train_data = _load_and_preprocess_data(args, config)
@@ -72,13 +74,15 @@ def main():
         train_data,
         batch_size=args.batch_size,
         collate_fn=default_data_collator,
+        num_workers=1,
+        prefetch_factor=2,
         # NOTE: this sampler will split dataset evenly across workers
         sampler=DistributedSampler(train_data, shuffle=True, drop_last=True),
     )
     LOGGER.debug(f"{len(dataloader)} batches per epoch")
 
     optimizer = ZeroRedundancyOptimizer(
-        model.parameters(), optimizer_class=torch.optim.AdamW, lr=args.lr
+        model.parameters(), optimizer_class=torch.optim.AdamW, lr=args.lr, fused=True
     )
     lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
         optimizer, T_max=1000, eta_min=args.lr * 1e-2
@@ -142,14 +146,15 @@ def main():
 
             with timers["forward"]:
                 outputs = model(**batch)
+                del batch # NOTE: to save memory for backwards pass
 
             with timers["backward"]:
-                optimizer.zero_grad(set_to_none=True)
                 outputs.loss.backward()
 
             with timers["update"]:
                 optimizer.step()
                 lr_scheduler.step()
+                optimizer.zero_grad(set_to_none=True)
 
             state["global_step"] += 1
             state["epoch_step"] += 1

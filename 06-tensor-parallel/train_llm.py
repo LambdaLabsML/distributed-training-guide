@@ -115,8 +115,7 @@ def main():
             "model.norm": tp.SequenceParallel(),
             "lm_head": tp.ColwiseParallel(
                 input_layouts=Shard(1),
-                output_layouts=Shard(-1),  # for tp.loss_parallel
-                use_local_output=False,  # for tp.loss_parallel
+                output_layouts=Replicate(),
             ),
         },
     )
@@ -216,10 +215,11 @@ def main():
                 # NOTE: for resuming
                 continue
 
-            with tp.loss_parallel(), timers["forward"]:
+            with timers["forward"]:
                 outputs = model(**batch)
+                del batch
 
-            with tp.loss_parallel(), timers["backward"]:
+            with timers["backward"]:
                 outputs.loss.backward()
 
             with timers["update"]:

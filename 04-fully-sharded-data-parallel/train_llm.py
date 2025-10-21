@@ -197,14 +197,15 @@ def main():
 
             with timers["forward"]:
                 outputs = model(**batch)
+                del batch
 
             with timers["backward"]:
-                optimizer.zero_grad(set_to_none=not args.cpu_offload)
                 outputs.loss.backward()
 
             with timers["update"]:
                 optimizer.step()
                 lr_scheduler.step()
+                optimizer.zero_grad(set_to_none=not args.cpu_offload)
 
             state["global_step"] += 1
             state["epoch_step"] += 1

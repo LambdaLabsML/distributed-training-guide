@@ -220,6 +220,7 @@ def main():
 
             with timers["forward"]:
                 outputs = model(**batch)
+                del batch
 
             with timers["backward"]:
                 outputs.loss.backward()

@@ -51,6 +51,8 @@ def main():
         f"Training {sum(p.numel() for p in model.parameters())} model parameters"
     )
 
+    model = torch.compile(model)
+
     LOGGER.info(f"Initialized model uses {get_mem_stats(device)['curr_alloc_gb']}gb")
 
     train_data = _load_and_preprocess_data(args, config)
@@ -62,6 +64,8 @@ def main():
         batch_size=args.batch_size,
         shuffle=True,
         drop_last=True,
+        num_workers=1,
+        prefetch_factor=2,
         collate_fn=default_data_collator,
     )
     LOGGER.info(f"{len(dataloader)} batches per epoch")
@@ -132,15 +136,16 @@ def main():
 
             with timers["forward"]:
                 outputs = model(**batch)
+                del batch
 
             with timers["backward"]:
-                # NOTE: set_to_none=True will de-allocate the gradients, saving us some memory.
-                optimizer.zero_grad(set_to_none=True)
                 outputs.loss.backward()
 
             with timers["update"]:
                 optimizer.step()
                 lr_scheduler.step()
+                # NOTE: set_to_none=True will de-allocate the gradients, saving us some memory.
+                optimizer.zero_grad(set_to_none=True)
 
             state["global_step"] += 1
             state["epoch_step"] += 1
