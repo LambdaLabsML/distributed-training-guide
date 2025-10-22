@@ -177,7 +177,7 @@ Install: `pip install deepspeed`
 
 Add `--local_rank` to cli parsing:
 ```diff
-     parser.add_argument("--log-freq", default=100, type=int)
+     parser.add_argument("--log-freq", default=10, type=int)
      parser.add_argument("--ckpt-freq", default=500, type=int)
 +    parser.add_argument("--local_rank", type=int, default=None)
      return parser

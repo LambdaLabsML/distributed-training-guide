@@ -35,7 +35,7 @@ def _get_parser() -> argparse.ArgumentParser:
     parser.add_argument("--num-epochs", default=100, type=int)
     parser.add_argument("--lr", default=3e-5, type=float)
     parser.add_argument("--batch-size", default=1, type=int)
-    parser.add_argument("--log-freq", default=100, type=int)
+    parser.add_argument("--log-freq", default=10, type=int)
     parser.add_argument("--ckpt-freq", default=500, type=int)
     return parser
 

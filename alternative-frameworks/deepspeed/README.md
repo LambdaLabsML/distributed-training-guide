@@ -24,7 +24,7 @@ References:
 
 ```diff
 @@ -305,11 +302,10 @@ def _get_parser() -> argparse.ArgumentParser:
-     parser.add_argument("--log-freq", default=100, type=int)
+     parser.add_argument("--log-freq", default=10, type=int)
      parser.add_argument("--ckpt-freq", default=500, type=int)
 +    parser.add_argument("--local_rank", type=int, default=None)
 +    deepspeed.add_config_arguments(parser)
