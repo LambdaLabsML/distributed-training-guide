@@ -60,10 +60,13 @@ def main():
         f"Training {sum(p.numel() for p in model.parameters())} model parameters"
     )
 
-    model = DistributedDataParallel(model, device_ids=[local_rank])
+    model = torch.compile(model)
     LOGGER.info(f"Initialized model uses {get_mem_stats(device)['curr_alloc_gb']}gb")
 
-    model = torch.compile(model)
+    model = DistributedDataParallel(
+        model, device_ids=[local_rank], bucket_cap_mb=500, gradient_as_bucket_view=True
+    )
+    LOGGER.info(f"After DDP: model uses {get_mem_stats(device)['curr_alloc_gb']}gb")
 
     # NOTE: Assumes that $HF_HOME is shared storage
     with rank0_first():
@@ -145,7 +148,7 @@ def main():
 
             with timers["forward"]:
                 outputs = model(**batch)
-                del batch # NOTE: to save memory for backwards pass
+                del batch  # NOTE: to save memory for backwards pass
 
             with timers["backward"]:
                 outputs.loss.backward()
