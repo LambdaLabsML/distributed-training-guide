@@ -39,7 +39,6 @@ Reference description of the process (from pytorch docs):
 ![image](https://pytorch.org/assets/images/fsdp_workflow.png)
 
 References:
-- [FSDP Internals](https://pytorch.org/docs/stable/notes/fsdp.html#fsdp-notes) (Very useful)
 - [FSDP Docs](https://pytorch.org/docs/stable/fsdp.html)
 - [FSDP Tutorial](https://pytorch.org/tutorials/intermediate/FSDP_tutorial.html).
 
