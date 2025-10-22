@@ -1,8 +1,11 @@
 # Distributed Training Guide
 
-<img src="https://lambdalabs.com/hubfs/distriubuted-training-guide.png" width="400px" />
+🔥 News 🔥
 
-[Neurips 2024 presentation slides here](https://docs.google.com/presentation/d/1ANMmkOGaruYKTvhnsAbZgI9GrdMliNvibWGuNYw6HX8/edit?usp=sharing)
+- [Pytorch Conference 2025 slides](https://docs.google.com/presentation/d/126BQcCJti_z3NQ7cGbm2iMBDVG7-0ekitxU3pvJ_WQw/edit?usp=sharing)
+- [Neurips 2024 slides](https://docs.google.com/presentation/d/1ANMmkOGaruYKTvhnsAbZgI9GrdMliNvibWGuNYw6HX8/edit?usp=sharing)
+
+<img src="https://lambdalabs.com/hubfs/distriubuted-training-guide.png" width="400px" />
 
 Ever wondered how to train a large neural network across a giant cluster? Look no further!
 
